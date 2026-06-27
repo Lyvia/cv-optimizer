@@ -1,17 +1,33 @@
 """
 CV Optimizer AI — Main Application
-Streamlit app: CV + job description → ATS-optimized CV, cover letter, analysis
+Streamlit app: CV (+ optional job description) → ATS-optimized CV, cover letter, analysis
 """
 
+import html
 import io
+import logging
+import re
 import zipfile
+
 import streamlit as st
 
 from src.parsers import parse_document
-from src.llm_client import LLMClient, PROVIDERS
+from src.llm_client import LLMClient
 from src.prompts import PromptBuilder
 from src.exporters import DOCXExporter
+from src.pdf_exporter import PDFExporter
 from src.anonymizer import anonymize
+from src.utils import strip_fences
+from src.differ import compute_diff, rebuild_text
+from src import styles, guide_content
+from src.styles import StyleConfig
+from src.preview import render_preview_html, SAMPLE_CV_PREVIEW, SAMPLE_LETTER_PREVIEW
+from src.i18n import t as i18n_t
+
+logger = logging.getLogger(__name__)
+
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+PDF_MIME = "application/pdf"
 
 # ─── Page config ──────────────────────────────────────────────────────────────
 
@@ -76,6 +92,19 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+# ─── AI usage quota (per browser session) ──────────────────────────────────────
+
+MAX_AI_CALLS_PER_SESSION = 10
+
+
+def _remaining_calls() -> int:
+    return max(0, MAX_AI_CALLS_PER_SESSION - st.session_state.ai_calls_used)
+
+
+def _quota_exhausted() -> bool:
+    return st.session_state.ai_calls_used >= MAX_AI_CALLS_PER_SESSION
+
+
 # ─── Session state init ────────────────────────────────────────────────────────
 
 def _init_state():
@@ -85,11 +114,22 @@ def _init_state():
         "changes": None,
         "cover_letter": None,
         "generated": False,
-        "messages": [],
         "llm": None,
-        "language": "Français",
+        "language": "English",
+        "ui_lang": "en",
         "cv_content": None,
         "job_content": None,
+        "ai_calls_used": 0,
+        "style_config": styles.DEFAULT_STYLE,
+        "current_cv": None,
+        "current_cl": None,
+        "cv_messages": [],
+        "cl_messages": [],
+        "cv_pending_diff": None,
+        "cv_diff_round": 0,
+        "cl_pending_response": None,
+        "accept_warning_shown": False,
+        "show_accept_warning_once": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -99,33 +139,142 @@ def _init_state():
 _init_state()
 
 
+def tr(key: str) -> str:
+    return i18n_t(key, st.session_state.ui_lang)
+
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+
+_LITERAL_CHANGES_SEPARATORS = ("---CHANGES---", "--- CHANGES ---")
+_CHANGES_HEADING_RE = re.compile(
+    r"^#{1,3}\s*(change|modification|modif|änder|cambio|modific)",
+    re.IGNORECASE | re.MULTILINE,
+)
+
 
 def _split_cv_and_changes(text: str) -> tuple[str, str]:
     """Split LLM output into (optimized_cv, changes_explanation)."""
-    marker = "---CHANGES---"
-    if marker in text:
-        parts = text.split(marker, 1)
-        return parts[0].strip(), parts[1].strip()
-    # Fallback: try heading-based split
-    for heading in ["## Modifications apportées", "## Changes Made", "## Cambios realizados"]:
-        if heading in text:
-            parts = text.split(heading, 1)
-            return parts[0].strip(), heading + parts[1].strip()
-    return text.strip(), "_L'explication des changements n'a pas pu être extraite séparément._"
+    for sep in _LITERAL_CHANGES_SEPARATORS:
+        if sep in text:
+            parts = text.split(sep, 1)
+            return parts[0].strip(), parts[1].strip()
+
+    match = _CHANGES_HEADING_RE.search(text)
+    if match:
+        return text[: match.start()].strip(), text[match.start():].strip()
+
+    logger.warning(
+        "Could not find a changes separator in the LLM output; "
+        "returning the full text as the CV with no changes summary."
+    )
+    return text.strip(), ""
 
 
 def _build_zip(cv_bytes: bytes, cl_bytes: bytes) -> bytes:
     """Package CV + cover letter into a single ZIP."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("CV_optimise.docx", cv_bytes)
-        zf.writestr("Lettre_de_motivation.docx", cl_bytes)
+        zf.writestr("Optimized_CV.docx", cv_bytes)
+        zf.writestr("Cover_Letter.docx", cl_bytes)
     buf.seek(0)
     return buf.getvalue()
 
 
-# ─── Sidebar ──────────────────────────────────────────────────────────────────
+def _diff_status(chunk_id: str) -> str:
+    return st.session_state.get(f"diff_{chunk_id}", "pending")
+
+
+def _set_diff_status(chunk_id: str, status: str):
+    st.session_state[f"diff_{chunk_id}"] = status
+
+
+def _collect_diff_statuses(chunks) -> dict[str, str]:
+    return {c.chunk_id: _diff_status(c.chunk_id) for c in chunks}
+
+
+def _maybe_show_accept_warning():
+    """
+    Queue the one-time irreversibility warning instead of rendering it
+    directly: this is called right before st.rerun(), which would discard
+    anything rendered in the same pass before the rerun lands.
+    """
+    if not st.session_state.accept_warning_shown:
+        st.session_state.show_accept_warning_once = True
+        st.session_state.accept_warning_shown = True
+
+
+def _render_text_block(lines: list[str], bg: str, fg: str, strike: bool = False):
+    text = html.escape("\n".join(lines))
+    if not text.strip():
+        return
+    decoration = "text-decoration: line-through;" if strike else ""
+    background = f"background:{bg};" if bg else ""
+    st.markdown(
+        f"<div style='{background} color:{fg}; padding:6px 10px; border-radius:4px; "
+        f"{decoration} white-space:pre-wrap; margin:2px 0; font-family:monospace; "
+        f"font-size:0.85rem;'>{text}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _render_diff_view(chunks):
+    """Render a unified (single-column, mobile-safe) diff with per-chunk
+    accept/ignore controls, then Accept All / Ignore All. Rebuilds
+    current_cv into session state on every decision."""
+    actionable = [c for c in chunks if c.type != "equal"]
+    if not actionable:
+        st.info(tr("diff_no_changes"))
+        return
+
+    for chunk in chunks:
+        if chunk.type == "equal":
+            _render_text_block(chunk.old_lines, bg="", fg="#555555")
+            continue
+
+        status = _diff_status(chunk.chunk_id)
+
+        if chunk.type == "removed":
+            _render_text_block(chunk.old_lines, bg="#fde8e8", fg="#842029", strike=True)
+            continue
+
+        if chunk.type == "added":
+            _render_text_block(chunk.new_lines, bg="#e6f4ea", fg="#1e7e34")
+        elif chunk.type == "replaced":
+            _render_text_block(chunk.old_lines, bg="#fde8e8", fg="#842029", strike=True)
+            _render_text_block(chunk.new_lines, bg="#e6f4ea", fg="#1e7e34")
+
+        if status == "pending":
+            bcol1, bcol2 = st.columns(2)
+            with bcol1:
+                if st.button(tr("diff_accept_btn"), key=f"accept_{chunk.chunk_id}", use_container_width=True):
+                    _maybe_show_accept_warning()
+                    _set_diff_status(chunk.chunk_id, "accepted")
+                    st.session_state.current_cv = rebuild_text(chunks, _collect_diff_statuses(chunks))
+                    st.rerun()
+            with bcol2:
+                if st.button(tr("diff_ignore_btn"), key=f"ignore_{chunk.chunk_id}", use_container_width=True):
+                    _set_diff_status(chunk.chunk_id, "ignored")
+                    st.session_state.current_cv = rebuild_text(chunks, _collect_diff_statuses(chunks))
+                    st.rerun()
+        else:
+            st.caption(f"({status})")
+
+    st.divider()
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if st.button(tr("diff_accept_all_btn"), key=f"accept_all_{st.session_state.cv_diff_round}", use_container_width=True):
+            _maybe_show_accept_warning()
+            for c in chunks:
+                _set_diff_status(c.chunk_id, "accepted")
+            st.session_state.current_cv = rebuild_text(chunks, _collect_diff_statuses(chunks))
+            st.rerun()
+    with col_b:
+        if st.button(tr("diff_ignore_all_btn"), key=f"ignore_all_{st.session_state.cv_diff_round}", use_container_width=True):
+            for c in chunks:
+                _set_diff_status(c.chunk_id, "ignored")
+            st.session_state.current_cv = rebuild_text(chunks, _collect_diff_statuses(chunks))
+            st.rerun()
+
 
 # ─── LLM config — loaded from Streamlit secrets or .env (not exposed to users) ─
 
@@ -139,11 +288,11 @@ def _load_config() -> tuple[str, str, str]:
     """
     import os
     from dotenv import load_dotenv
-    load_dotenv()  # Charge le fichier .env si présent (usage local)
+    load_dotenv()  # Load the .env file if present (local usage)
 
     # Try each provider in order of preference (free first)
     candidates = [
-        ("GOOGLE_API_KEY",    "Google (Gemini)",    "gemini-1.5-flash"),
+        ("GOOGLE_API_KEY",    "Google (Gemini)",    "gemini-2.5-flash"),
         ("GROQ_API_KEY",      "Groq (Llama)",       "llama-3.3-70b-versatile"),
         ("ANTHROPIC_API_KEY", "Anthropic (Claude)", "claude-3-5-haiku-20241022"),
     ]
@@ -169,107 +318,130 @@ _provider, _api_key, _model = _load_config()
 # ─── Main layout ──────────────────────────────────────────────────────────────
 
 st.title("📄 CV Optimizer AI")
-st.markdown("*CV + fiche de poste → CV ATS-optimisé, lettre de motivation, analyse détaillée.*")
+
+# ── Interface language — first selectable control on the page ────────────────
+ui_lang_choice = st.radio(
+    "Interface language",
+    ["🇬🇧 English", "🇫🇷 Français"],
+    horizontal=True,
+    key="ui_lang_radio",
+)
+st.session_state.ui_lang = "fr" if "Français" in ui_lang_choice else "en"
+
+st.markdown(f"*{tr('app_tagline')}*")
+
+# ── Output language — controls the generated document language, not the UI ──
+st.subheader(tr("output_lang_subheader"))
+st.caption(tr("output_lang_caption"))
+output_language = st.selectbox(
+    "Output language",
+    ["English", "Français", "Español", "Deutsch", "Italiano"],
+    label_visibility="collapsed",
+)
+st.session_state.language = output_language
+
+# ── Disclaimer — always visible, regardless of the active tab ─────────────────
+st.warning(tr("disclaimer_banner"))
 
 if not _api_key:
-    st.error(
-        "⚠️ Aucune clé API configurée. "
-        "Ajoute `GOOGLE_API_KEY`, `GROQ_API_KEY` ou `ANTHROPIC_API_KEY` "
-        "dans les secrets Streamlit (Settings → Secrets) ou dans un fichier `.env`."
-    )
+    st.error(tr("no_api_key_error"))
 
-tab_input, tab_analysis, tab_output, tab_refine = st.tabs([
-    "📤 Entrée",
-    "🔍 Analyse du CV",
-    "✨ Sortie optimisée",
-    "💬 Affiner avec l'IA",
+tab_guide, tab_input, tab_analysis, tab_results = st.tabs([
+    tr("tab_guide"),
+    tr("tab_input"),
+    tr("tab_analysis"),
+    tr("tab_results"),
 ])
 
 
-# ─── TAB 1 : Input ────────────────────────────────────────────────────────────
+# ─── TAB : How to Use ─────────────────────────────────────────────────────────
+
+with tab_guide:
+    if st.session_state.ui_lang == "en":
+        st.markdown(guide_content.GUIDE_EN)
+    else:
+        st.markdown(guide_content.GUIDE_FR)
+
+
+# ─── TAB : Input ──────────────────────────────────────────────────────────────
 
 with tab_input:
-    st.subheader("Votre CV")
+    st.subheader(tr("input_cv_subheader"))
     cv_file = st.file_uploader(
-        "Uploader votre CV",
+        tr("input_cv_upload_label"),
         type=["pdf", "docx", "txt"],
         key="cv_upload",
     )
     cv_text_paste = st.text_area(
-        "Ou coller votre CV ici",
+        tr("input_cv_paste_label"),
         height=180,
-        placeholder="Jean Dupont\njean@email.com | LinkedIn\n\nEXPÉRIENCE\n...",
+        placeholder=tr("input_cv_placeholder"),
     )
 
     st.divider()
 
-    st.subheader("Fiche de poste")
+    st.subheader(tr("input_job_subheader"))
+    st.caption(tr("input_job_caption"))
     job_file = st.file_uploader(
-        "Uploader la fiche (optionnel)",
+        tr("input_job_upload_label"),
         type=["pdf", "docx", "txt"],
         key="job_upload",
     )
     job_text_paste = st.text_area(
-        "Ou coller la fiche de poste ici",
+        tr("input_job_paste_label"),
         height=180,
-        placeholder="Titre du poste : ...\nMissions : ...\nProfil recherché : ...",
+        placeholder=tr("input_job_placeholder"),
     )
 
     st.divider()
-
-    # ── Langue de sortie (prominent, always visible) ──────────────────────────
-    st.subheader("🌐 Langue du CV et de la lettre produits")
-    st.caption("Peu importe la langue du CV en entrée, les documents générés seront dans cette langue.")
-    output_language = st.selectbox(
-        "Langue de sortie",
-        ["Français", "English", "Español", "Deutsch", "Italiano"],
-        label_visibility="collapsed",
-    )
-    st.session_state.language = output_language
 
     # ── Privacy option ────────────────────────────────────────────────────────
-    st.divider()
     anonymize_data = st.toggle(
-        "🔒 Anonymiser mes données personnelles avant envoi à l'IA",
+        tr("input_anonymize_toggle"),
         value=True,
-        help=(
-            "Remplace nom, email, téléphone, LinkedIn, adresse par des placeholders "
-            "avant d'envoyer à l'API. Le résultat contiendra ces placeholders — "
-            "complète-les avant d'envoyer ta candidature."
-        ),
+        help=tr("input_anonymize_help"),
     )
     debug_mode = st.toggle(
-        "🐛 Mode debug — afficher le texte envoyé à l'IA",
+        tr("input_debug_toggle"),
         value=False,
-        help="Affiche le contenu exact transmis à l'API, après anonymisation. Utile pour vérifier ce qui part.",
+        help=tr("input_debug_help"),
     )
 
     st.divider()
-    generate_btn = st.button("🚀 Générer", type="primary", use_container_width=True)
+    generate_btn = st.button(
+        tr("input_generate_btn"),
+        type="primary",
+        use_container_width=True,
+        disabled=_quota_exhausted(),
+    )
+    quota_caption = st.empty()
+    quota_caption.caption(tr("quota_remaining_caption").format(remaining=_remaining_calls(), max=MAX_AI_CALLS_PER_SESSION))
+    if _quota_exhausted():
+        st.error(tr("quota_exhausted_error").format(max=MAX_AI_CALLS_PER_SESSION))
 
     if generate_btn:
         # ── Validation
         errors = []
-        if not api_key:
-            errors.append("Clé API non configurée. Contacte l'administrateur de l'app.")
+        if not _api_key:
+            errors.append(tr("input_error_no_api_key"))
 
         cv_content = ""
         if cv_file:
             try:
                 cv_content = parse_document(cv_file)
             except Exception as e:
-                errors.append(f"Erreur lecture CV : {e}")
+                errors.append(tr("input_error_cv_read").format(error=e))
         elif cv_text_paste.strip():
             cv_content = cv_text_paste.strip()
         else:
-            errors.append("CV manquant (fichier ou texte collé).")
+            errors.append(tr("input_error_cv_missing"))
 
         job_content = ""
         if job_file:
             try:
                 job_content = parse_document(job_file)
             except Exception as e:
-                errors.append(f"Erreur lecture fiche de poste : {e}")
+                errors.append(tr("input_error_job_read").format(error=e))
         elif job_text_paste.strip():
             job_content = job_text_paste.strip()
         # No error if empty — job description is optional
@@ -285,206 +457,366 @@ with tab_input:
             anon_result = anonymize(cv_content)
             cv_for_llm = anon_result.anonymized_text
             if anon_result.summary:
-                with st.expander(f"🔒 {len(anon_result.summary)} élément(s) anonymisé(s) — clique pour voir"):
+                with st.expander(tr("input_anon_expander_title").format(count=len(anon_result.summary))):
                     col_a, col_b = st.columns(2)
                     with col_a:
-                        st.markdown("**Remplacé par**")
+                        st.markdown(tr("input_anon_replaced_with"))
                         for placeholder in anon_result.replacements:
                             st.code(placeholder, language=None)
                     with col_b:
-                        st.markdown("**Valeur originale**")
+                        st.markdown(tr("input_anon_original_value"))
                         for original in anon_result.replacements.values():
                             st.code(original, language=None)
-                    st.caption(
-                        "Ces placeholders apparaîtront dans les documents générés. "
-                        "Remplace-les par tes vraies informations avant envoi."
-                    )
+                    st.caption(tr("input_anon_caption"))
             else:
-                st.info("🔒 Aucune donnée personnelle détectée automatiquement.")
+                st.info(tr("input_anon_none_detected"))
 
         # ── Debug mode ────────────────────────────────────────────────────────
         if debug_mode:
-            with st.expander("🐛 Debug — texte exact envoyé à l'IA", expanded=True):
-                st.markdown("**CV (après anonymisation) :**")
-                st.text_area("CV envoyé", value=cv_for_llm, height=200, disabled=True, key="debug_cv")
-                st.markdown("**Fiche de poste :**")
-                st.text_area("Job envoyé", value=job_content, height=150, disabled=True, key="debug_job")
-                st.caption(f"Provider : {_provider} | Modèle : {_model}")
+            with st.expander(tr("input_debug_expander_title"), expanded=True):
+                st.markdown(tr("input_debug_cv_label"))
+                st.text_area("CV sent", value=cv_for_llm, height=200, disabled=True, key="debug_cv")
+                st.markdown(tr("input_debug_job_label"))
+                st.text_area("Job sent", value=job_content, height=150, disabled=True, key="debug_job")
+                st.caption(tr("input_debug_provider_model").format(provider=_provider, model=_model))
 
         # ── Init LLM
         try:
             llm = LLMClient(provider=_provider, api_key=_api_key, model=_model)
         except Exception as e:
-            st.error(f"Initialisation LLM échouée : {e}")
+            st.error(tr("input_llm_init_failed").format(error=e))
             st.stop()
 
         st.session_state.llm = llm
         st.session_state.cv_content = cv_content
         st.session_state.job_content = job_content
-        st.session_state.messages = []  # Reset chat on new generation
+
+        # Reset refine/diff state on a fresh generation
+        st.session_state.cv_messages = []
+        st.session_state.cl_messages = []
+        st.session_state.cv_pending_diff = None
+        st.session_state.cv_diff_round = 0
+        st.session_state.cl_pending_response = None
 
         prompt_builder = PromptBuilder(language=output_language)
+        st.session_state.ai_calls_used += 1
+        quota_caption.caption(tr("quota_remaining_caption").format(remaining=_remaining_calls(), max=MAX_AI_CALLS_PER_SESSION))
 
         # ── Generate
-        progress = st.progress(0, text="Démarrage...")
+        progress = st.progress(0, text=tr("progress_starting"))
 
         try:
-            progress.progress(10, text="Analyse du CV en cours...")
-            st.session_state.analysis = llm.generate(
-                system="Tu es un expert RH et spécialiste ATS avec 15 ans d'expérience.",
+            progress.progress(10, text=tr("progress_analyzing"))
+            st.session_state.analysis = strip_fences(llm.generate(
+                system="You are an HR expert and ATS specialist with 15 years of experience.",
                 user=prompt_builder.analysis(cv_for_llm, job_content),
                 max_tokens=3000,
-            )
+            ))
 
-            progress.progress(45, text="Optimisation ATS du CV...")
-            raw_opt = llm.generate(
-                system="Tu es un expert rédacteur de CV et spécialiste ATS.",
+            progress.progress(45, text=tr("progress_optimizing"))
+            raw_opt = strip_fences(llm.generate(
+                system="You are an expert CV writer and ATS specialist.",
                 user=prompt_builder.optimize_cv(cv_for_llm, job_content),
                 max_tokens=4000,
-            )
+            ))
             st.session_state.optimized_cv, st.session_state.changes = _split_cv_and_changes(raw_opt)
 
-            progress.progress(80, text="Rédaction de la lettre de motivation...")
-            st.session_state.cover_letter = llm.generate(
-                system="Tu es expert en rédaction de lettres de motivation percutantes.",
+            progress.progress(80, text=tr("progress_writing_letter"))
+            st.session_state.cover_letter = strip_fences(llm.generate(
+                system="You are an expert at writing compelling cover letters.",
                 user=prompt_builder.cover_letter(cv_for_llm, job_content),
                 max_tokens=2000,
-            )
+            ))
 
-            progress.progress(100, text="Terminé !")
+            st.session_state.current_cv = st.session_state.optimized_cv
+            st.session_state.current_cl = st.session_state.cover_letter
+
+            progress.progress(100, text=tr("progress_done"))
             st.session_state.generated = True
-            st.success("✅ Génération complète ! Consulte les onglets **Analyse** et **Sortie optimisée**.")
+            st.success(tr("generation_success"))
 
         except Exception as e:
             progress.empty()
-            st.error(f"Erreur lors de la génération : {e}")
-            st.info("Vérifie ta clé API et ta connexion internet.")
+            st.error(tr("generation_error").format(error=e))
+            st.info(tr("generation_error_hint"))
 
 
-# ─── TAB 2 : Analysis ─────────────────────────────────────────────────────────
+# ─── TAB : Analysis ───────────────────────────────────────────────────────────
 
 with tab_analysis:
     if st.session_state.analysis:
         st.markdown(st.session_state.analysis)
     else:
-        st.info("Lance la génération dans l'onglet **Entrée** pour voir l'analyse.")
+        st.info(tr("analysis_empty_hint"))
 
 
-# ─── TAB 3 : Output ───────────────────────────────────────────────────────────
+# ─── TAB : Results ────────────────────────────────────────────────────────────
 
-with tab_output:
-    if st.session_state.optimized_cv:
-        exporter = DOCXExporter()
+with tab_results:
+    if not st.session_state.optimized_cv:
+        st.info(tr("results_empty_hint"))
+    else:
+        # ── Visual style controls + live preview ──────────────────────────────
+        st.subheader(tr("results_style_subheader"))
+        st.caption(tr("results_style_caption"))
 
-        # ── CV optimisé
-        st.subheader("✨ CV optimisé (ATS)")
-        st.markdown(st.session_state.optimized_cv)
-
-        try:
-            cv_bytes = exporter.cv_to_docx(st.session_state.optimized_cv)
-            st.download_button(
-                "📥 Télécharger le CV (.docx)",
-                data=cv_bytes,
-                file_name="CV_optimise.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            )
-        except Exception as e:
-            st.warning(f"Export DOCX indisponible : {e}")
-
-        st.divider()
-
-        # ── Changements
-        st.subheader("🔄 Modifications & explications")
-        st.markdown(
-            f'<div class="result-box">{st.session_state.changes}</div>',
-            unsafe_allow_html=True,
+        mode = st.radio(
+            tr("style_mode_label"),
+            [tr("style_mode_template"), tr("style_mode_advanced")],
+            horizontal=True,
+            key="style_mode",
         )
 
+        if mode == tr("style_mode_template"):
+            template_names = list(styles.TEMPLATES.keys())
+            chosen_name = st.radio(
+                tr("style_template_label"),
+                template_names,
+                horizontal=True,
+                key="template_choice",
+            )
+            style = styles.TEMPLATES[chosen_name]
+        else:
+            base = st.session_state.style_config
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                text_color = st.color_picker(tr("style_color_text_label"), value=base.text_color)
+            with col2:
+                heading_color = st.color_picker(tr("style_color_heading_label"), value=base.heading_color)
+            with col3:
+                font_index = styles.FONT_CHOICES.index(base.font) if base.font in styles.FONT_CHOICES else 0
+                font = st.selectbox(tr("style_font_label"), styles.FONT_CHOICES, index=font_index)
+            style = StyleConfig(
+                name="Custom",
+                text_color=text_color,
+                heading_color=heading_color,
+                accent_color=heading_color,
+                font=font,
+            )
+
+        st.session_state.style_config = style
+
+        st.divider()
+        st.markdown(tr("style_preview_heading"))
+        preview_doc = st.radio(
+            tr("style_preview_doc_label"),
+            [tr("style_preview_doc_cv"), tr("style_preview_doc_letter")],
+            horizontal=True,
+            key="preview_doc_choice",
+        )
+        if preview_doc == tr("style_preview_doc_cv"):
+            preview_source = st.session_state.current_cv or SAMPLE_CV_PREVIEW
+        else:
+            preview_source = st.session_state.current_cl or SAMPLE_LETTER_PREVIEW
+
+        if not st.session_state.current_cv:
+            st.caption(tr("style_preview_sample_caption"))
+
+        st.markdown(render_preview_html(preview_source, style), unsafe_allow_html=True)
+
         st.divider()
 
-        # ── Cover letter
-        st.subheader("📝 Lettre de motivation")
-        st.markdown(st.session_state.cover_letter)
+        if st.session_state.show_accept_warning_once:
+            st.warning(tr("diff_irreversible_warning"))
+            st.session_state.show_accept_warning_once = False
 
-        try:
-            cl_bytes = exporter.cover_letter_to_docx(st.session_state.cover_letter)
-            col_dl1, col_dl2 = st.columns(2)
-            with col_dl1:
-                st.download_button(
-                    "📥 Télécharger la lettre (.docx)",
-                    data=cl_bytes,
-                    file_name="Lettre_de_motivation.docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                )
-            with col_dl2:
-                zip_bytes = _build_zip(cv_bytes, cl_bytes)
-                st.download_button(
-                    "📦 Tout télécharger (.zip)",
-                    data=zip_bytes,
-                    file_name="candidature_complete.zip",
-                    mime="application/zip",
-                )
-        except Exception as e:
-            st.warning(f"Export DOCX indisponible : {e}")
+        exporter = DOCXExporter()
+        pdf_exporter = PDFExporter()
 
-    else:
-        st.info("Lance la génération dans l'onglet **Entrée** pour voir les résultats.")
+        cv_subtab, cl_subtab = st.tabs([tr("results_subtab_cv"), tr("results_subtab_letter")])
 
+        # ── CV sub-tab ─────────────────────────────────────────────────────────
+        with cv_subtab:
+            st.subheader(tr("results_cv_heading"))
+            st.markdown(st.session_state.current_cv)
 
-# ─── TAB 4 : AI Refinement chat ───────────────────────────────────────────────
+            col1, col2 = st.columns(2)
+            with col1:
+                try:
+                    cv_docx = exporter.cv_to_docx(st.session_state.current_cv, style=style)
+                    st.download_button(tr("dl_cv_docx"), data=cv_docx, file_name="Optimized_CV.docx", mime=DOCX_MIME, key="dl_cv_docx_btn")
+                except Exception as e:
+                    st.warning(tr("export_unavailable").format(error=e))
+                    cv_docx = None
+            with col2:
+                try:
+                    cv_pdf = pdf_exporter.cv_to_pdf(st.session_state.current_cv, style=style)
+                    st.download_button(tr("dl_cv_pdf"), data=cv_pdf, file_name="Optimized_CV.pdf", mime=PDF_MIME, key="dl_cv_pdf_btn")
+                except Exception as e:
+                    st.warning(tr("export_unavailable").format(error=e))
+                    cv_pdf = None
 
-with tab_refine:
-    st.subheader("💬 Affiner avec l'IA")
-    st.markdown(
-        "Donne des instructions précises pour modifier le CV ou la lettre. "
-        "Exemples : *\"Rends le ton plus formel\"*, *\"Ajoute des mots-clés liés au management\"*, "
-        "*\"Raccourcis la lettre de 20%\"*."
-    )
+            st.divider()
+            st.subheader(tr("results_changes_heading"))
+            st.markdown(
+                f'<div class="result-box">{st.session_state.changes}</div>',
+                unsafe_allow_html=True,
+            )
 
-    if not st.session_state.generated:
-        st.info("Lance d'abord la génération dans l'onglet **Entrée**.")
-    else:
-        # Display chat history
-        for msg in st.session_state.messages:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
+            st.divider()
+            # Default open once the user has started refining (chat history or a
+            # pending diff exists) — otherwise st.rerun() after Accept/Ignore would
+            # snap this back closed on every interaction.
+            cv_expanded = bool(st.session_state.cv_messages or st.session_state.cv_pending_diff)
+            with st.expander(tr("refine_cv_expander_title"), expanded=cv_expanded):
+                st.caption(tr("refine_chat_examples"))
 
-        if user_instruction := st.chat_input("Ton instruction..."):
-            st.session_state.messages.append({"role": "user", "content": user_instruction})
-            with st.chat_message("user"):
-                st.markdown(user_instruction)
+                for msg in st.session_state.cv_messages:
+                    with st.chat_message(msg["role"]):
+                        st.markdown(msg["content"])
 
-            with st.chat_message("assistant"):
-                with st.spinner("Traitement..."):
-                    context = (
-                        f"CV optimisé actuel :\n{st.session_state.optimized_cv}\n\n"
-                        f"Lettre de motivation actuelle :\n{st.session_state.cover_letter}"
-                    )
-                    pb = PromptBuilder(language=st.session_state.language)
+                quota_exhausted = _quota_exhausted()
+                placeholder = tr("refine_quota_placeholder") if quota_exhausted else tr("refine_chat_placeholder")
+                if quota_exhausted:
+                    st.error(tr("quota_exhausted_error").format(max=MAX_AI_CALLS_PER_SESSION))
+
+                if cv_instruction := st.chat_input(placeholder, disabled=quota_exhausted, key="cv_chat_input"):
+                    st.session_state.cv_messages.append({"role": "user", "content": cv_instruction})
+                    with st.chat_message("user"):
+                        st.markdown(cv_instruction)
+                    with st.chat_message("assistant"):
+                        with st.spinner(tr("refine_processing")):
+                            pb = PromptBuilder(language=st.session_state.language)
+                            st.session_state.ai_calls_used += 1
+                            try:
+                                raw_response = st.session_state.llm.generate(
+                                    system="You are an expert CV writer. Apply the user's instructions precisely.",
+                                    user=pb.refine(st.session_state.current_cv, cv_instruction),
+                                    max_tokens=3000,
+                                )
+                                # Separate the document itself from the trailing "Changes made"
+                                # note so that note never becomes part of the diffable CV content.
+                                document, change_note = _split_cv_and_changes(strip_fences(raw_response))
+                                st.markdown(document)
+                                if change_note:
+                                    st.caption(change_note)
+                                st.session_state.cv_messages.append({"role": "assistant", "content": document})
+
+                                st.session_state.cv_diff_round += 1
+                                st.session_state.cv_pending_diff = compute_diff(
+                                    st.session_state.current_cv,
+                                    document,
+                                    round_id=str(st.session_state.cv_diff_round),
+                                )
+                            except Exception as e:
+                                error_msg = tr("refine_error").format(error=e)
+                                st.error(error_msg)
+                                st.session_state.cv_messages.append({"role": "assistant", "content": error_msg})
+
+                if st.session_state.cv_pending_diff:
+                    _render_diff_view(st.session_state.cv_pending_diff)
+
+                st.divider()
+                st.markdown(tr("diff_download_current_version"))
+                col3, col4 = st.columns(2)
+                with col3:
                     try:
-                        response = st.session_state.llm.generate(
-                            system="Tu es un expert rédacteur CV. Applique les instructions de l'utilisateur avec précision.",
-                            user=pb.refine(context, user_instruction),
-                            max_tokens=3000,
-                        )
-                        st.markdown(response)
-                        st.session_state.messages.append({"role": "assistant", "content": response})
+                        cur_docx = exporter.cv_to_docx(st.session_state.current_cv, style=style)
+                        st.download_button(tr("dl_cv_current_docx"), data=cur_docx, file_name="Refined_CV.docx", mime=DOCX_MIME, key="dl_cv_current_docx_btn")
+                    except Exception:
+                        pass
+                with col4:
+                    try:
+                        cur_pdf = pdf_exporter.cv_to_pdf(st.session_state.current_cv, style=style)
+                        st.download_button(tr("dl_cv_current_pdf"), data=cur_pdf, file_name="Refined_CV.pdf", mime=PDF_MIME, key="dl_cv_current_pdf_btn")
+                    except Exception:
+                        pass
 
-                        # Offer download of refined version
-                        exporter = DOCXExporter()
+        # ── Cover Letter sub-tab ────────────────────────────────────────────────
+        with cl_subtab:
+            st.subheader(tr("results_letter_heading"))
+            st.markdown(st.session_state.current_cl)
+
+            col5, col6 = st.columns(2)
+            with col5:
+                try:
+                    cl_docx = exporter.cover_letter_to_docx(st.session_state.current_cl, style=style)
+                    st.download_button(tr("dl_letter_docx"), data=cl_docx, file_name="Cover_Letter.docx", mime=DOCX_MIME, key="dl_letter_docx_btn")
+                except Exception as e:
+                    st.warning(tr("export_unavailable").format(error=e))
+                    cl_docx = None
+            with col6:
+                try:
+                    cl_pdf = pdf_exporter.cover_letter_to_pdf(st.session_state.current_cl, style=style)
+                    st.download_button(tr("dl_letter_pdf"), data=cl_pdf, file_name="Cover_Letter.pdf", mime=PDF_MIME, key="dl_letter_pdf_btn")
+                except Exception as e:
+                    st.warning(tr("export_unavailable").format(error=e))
+
+            st.divider()
+            cl_expanded = bool(st.session_state.cl_messages or st.session_state.cl_pending_response)
+            with st.expander(tr("refine_letter_expander_title"), expanded=cl_expanded):
+                for msg in st.session_state.cl_messages:
+                    with st.chat_message(msg["role"]):
+                        st.markdown(msg["content"])
+
+                quota_exhausted = _quota_exhausted()
+                placeholder = tr("refine_quota_placeholder") if quota_exhausted else tr("refine_chat_placeholder")
+                if quota_exhausted:
+                    st.error(tr("quota_exhausted_error").format(max=MAX_AI_CALLS_PER_SESSION))
+
+                if cl_instruction := st.chat_input(placeholder, disabled=quota_exhausted, key="cl_chat_input"):
+                    st.session_state.cl_messages.append({"role": "user", "content": cl_instruction})
+                    with st.chat_message("user"):
+                        st.markdown(cl_instruction)
+                    with st.chat_message("assistant"):
+                        with st.spinner(tr("refine_processing")):
+                            pb = PromptBuilder(language=st.session_state.language)
+                            st.session_state.ai_calls_used += 1
+                            try:
+                                raw_response = st.session_state.llm.generate(
+                                    system="You are an expert at writing compelling cover letters. Apply the user's instructions precisely.",
+                                    user=pb.refine(st.session_state.current_cl, cl_instruction),
+                                    max_tokens=2000,
+                                )
+                                # Separate the letter itself from the trailing "Changes made"
+                                # note so that note never becomes part of the letter content.
+                                document, change_note = _split_cv_and_changes(strip_fences(raw_response))
+                                st.markdown(document)
+                                if change_note:
+                                    st.caption(change_note)
+                                st.session_state.cl_messages.append({"role": "assistant", "content": document})
+                                st.session_state.cl_pending_response = document
+                            except Exception as e:
+                                error_msg = tr("refine_error").format(error=e)
+                                st.error(error_msg)
+                                st.session_state.cl_messages.append({"role": "assistant", "content": error_msg})
+
+                if st.session_state.cl_pending_response:
+                    st.markdown(tr("letter_refined_heading"))
+                    st.markdown(st.session_state.cl_pending_response)
+
+                    if st.button(tr("letter_replace_btn"), key="replace_letter_btn"):
+                        _maybe_show_accept_warning()
+                        st.session_state.current_cl = st.session_state.cl_pending_response
+                        st.session_state.cl_pending_response = None
+                        st.rerun()
+
+                    col7, col8 = st.columns(2)
+                    with col7:
                         try:
-                            refined_bytes = exporter.cv_to_docx(response)
-                            st.download_button(
-                                "📥 Télécharger cette version (.docx)",
-                                data=refined_bytes,
-                                file_name="CV_affine.docx",
-                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                key=f"dl_refined_{len(st.session_state.messages)}",
-                            )
+                            pending_docx = exporter.cover_letter_to_docx(st.session_state.cl_pending_response, style=style)
+                            st.download_button(tr("dl_letter_docx"), data=pending_docx, file_name="Refined_Cover_Letter.docx", mime=DOCX_MIME, key="dl_cl_pending_docx_btn")
+                        except Exception:
+                            pass
+                    with col8:
+                        try:
+                            pending_pdf = pdf_exporter.cover_letter_to_pdf(st.session_state.cl_pending_response, style=style)
+                            st.download_button(tr("dl_letter_pdf"), data=pending_pdf, file_name="Refined_Cover_Letter.pdf", mime=PDF_MIME, key="dl_cl_pending_pdf_btn")
                         except Exception:
                             pass
 
-                    except Exception as e:
-                        error_msg = f"Erreur : {e}"
-                        st.error(error_msg)
-                        st.session_state.messages.append({"role": "assistant", "content": error_msg})
+        # ── Bundle download (both current documents) ───────────────────────────
+        st.divider()
+        try:
+            zip_cv = exporter.cv_to_docx(st.session_state.current_cv, style=style)
+            zip_cl = exporter.cover_letter_to_docx(st.session_state.current_cl, style=style)
+            zip_bytes = _build_zip(zip_cv, zip_cl)
+            st.download_button(
+                tr("dl_all_zip"),
+                data=zip_bytes,
+                file_name="complete_application.zip",
+                mime="application/zip",
+                key="dl_all_zip_btn",
+            )
+        except Exception as e:
+            st.warning(tr("export_unavailable").format(error=e))

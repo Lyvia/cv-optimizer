@@ -1,6 +1,8 @@
 # 📄 CV Optimizer AI
 
-> Upload a CV and a job description → get an ATS-optimized CV, a tailored cover letter, a detailed analysis, and an explanation of every change made. Fully AI-powered, multi-language, multi-provider.
+🇬🇧 English | [🇫🇷 Français](README.fr.md)
+
+> Upload a CV and (optionally) a job description → get an ATS-optimized CV, a tailored cover letter, a detailed analysis, and an explanation of every change made. Fully AI-powered, multi-language, multi-provider.
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.35%2B-red)](https://streamlit.io/)
@@ -8,17 +10,31 @@
 
 ---
 
+## ⚠️ Disclaimer
+
+AI-generated content can contain mistakes or inaccuracies. **You are responsible for
+reviewing and validating the final CV and cover letter** before sending them to an
+employer. This tool assists in CV writing — it does not replace your own judgment.
+
+---
+
 ## ✨ Features
 
 - **ATS-optimized CV** — rewrites your CV with the exact keywords and structure ATS systems scan for
+- **Works with or without a job description** — provide one for a tailored result, or skip it for a general ATS optimization
 - **Tailored cover letter** — unique to the job, no generic templates
 - **CV analysis** — score, strengths, gaps, ATS issues, priority actions
 - **Change log** — explains every modification and why it was made
 - **AI refinement chat** — give instructions to adjust any output in natural language
-- **Multi-language** — French, English, Spanish, German, Italian
+- **Visual style picker** — 3 ready-made templates or an advanced mode (text color, heading color, font), with an instant, free, local preview that never consumes AI tokens
+- **Bilingual interface** — the whole UI switches between English and French with one toggle, independent of the output language
+- **Output language** — French, English, Spanish, German, Italian (independent of the interface language)
+- **Session AI quota** — capped at 10 AI generations per session to keep the app sustainable
 - **Multi-provider** — Anthropic Claude, Google Gemini (free), Groq (free)
-- **DOCX export** — download CV and cover letter as `.docx` files
+- **DOCX & PDF export** — download CV and cover letter as `.docx` or `.pdf`, styled per your chosen visual style
+- **Inline AI refinement with diff review** — refine the CV or cover letter by chat from the Results tab; CV changes are shown as a line-by-line diff you accept or ignore individually (or all at once) before they become permanent
 - **Bundle download** — get everything in a single `.zip`
+- **PII anonymization** — optionally strips name, email, phone, links before anything is sent to the AI
 
 ---
 
@@ -26,22 +42,31 @@
 
 ```
 cv-optimizer/
-├── app.py              ← Streamlit UI + orchestration logic
+├── app.py                  ← Streamlit UI + orchestration logic
 ├── src/
-│   ├── parsers.py      ← PDF / DOCX / TXT extraction
-│   ├── llm_client.py   ← Unified LLM interface (Anthropic / Gemini / Groq)
-│   ├── prompts.py      ← All prompt templates with language injection
-│   └── exporters.py    ← Markdown → DOCX conversion
+│   ├── parsers.py          ← PDF / DOCX / TXT extraction
+│   ├── llm_client.py       ← Unified LLM interface (Anthropic / Gemini / Groq)
+│   ├── prompts.py          ← All prompt templates with language injection
+│   ├── utils.py            ← strip_fences() — cleans stray ``` fences from LLM output
+│   ├── differ.py           ← Line-based diff + accept/ignore rebuild for CV refine
+│   ├── exporters.py        ← Markdown → DOCX conversion (style-aware)
+│   ├── pdf_exporter.py     ← Markdown → PDF conversion (style-aware, fpdf2)
+│   ├── styles.py           ← Visual style definitions (templates, fonts, colors)
+│   ├── preview.py          ← Free, local HTML live preview (no AI call)
+│   ├── anonymizer.py       ← PII detection & placeholder substitution
+│   ├── i18n.py             ← EN/FR UI string dictionary
+│   └── guide_content.py    ← "How to Use" tab long-form content (EN/FR)
 ├── requirements.txt
 ├── Dockerfile
 ├── .env.example
-└── README.md
+├── README.md
+└── README.fr.md
 ```
 
 **Data flow:**
 
 ```
-[CV file + Job description]
+[CV file + optional job description]
          │
          ▼
     parsers.py  (extract text)
@@ -50,14 +75,15 @@ cv-optimizer/
     prompts.py  (build prompts)
          │
          ▼
-   llm_client.py  (call LLM API)
+   llm_client.py  (call LLM API) → utils.strip_fences()
          │
-         ├── CV Analysis  →  Tab "Analyse"
-         ├── Optimized CV + Changes  →  Tab "Sortie optimisée"
-         └── Cover Letter  →  Tab "Sortie optimisée"
-                  │
+         ├── CV Analysis            →  Tab "CV Analysis"
+         ├── Optimized CV + Changes →  Tab "Results" › CV sub-tab
+         └── Cover Letter           →  Tab "Results" › Cover Letter sub-tab
+                  │                       │
+                  │                       └─ refine chat → differ.py (CV diff review)
                   ▼
-           exporters.py  (→ .docx)
+     exporters.py / pdf_exporter.py + styles.py  (→ styled .docx / .pdf)
 ```
 
 ---
@@ -68,13 +94,17 @@ cv-optimizer/
 |---|---|---|---|
 | **Anthropic** | claude-3-5-haiku | ~$0.01 / generation | ❌ |
 | **Anthropic** | claude-3-5-sonnet | ~$0.04 / generation | ❌ |
-| **Google** | gemini-1.5-flash | $0.00 | ✅ 15 req/min, 1M tokens/day |
-| **Google** | gemini-2.0-flash | $0.00 | ✅ |
+| **Google** | gemini-2.5-flash | $0.00 | ✅ rate-limited |
+| **Google** | gemini-2.0-flash | $0.00 | ✅ rate-limited |
 | **Groq** | llama-3.1-8b | $0.00 | ✅ rate-limited |
 | **Groq** | llama-3.3-70b | $0.00 | ✅ rate-limited |
 
-**Recommendation for zero cost:** Google Gemini 1.5 Flash or Groq Llama 3.3 70B.
+**Recommendation for zero cost:** Google Gemini 2.5 Flash or Groq Llama 3.3 70B.
 **Recommendation for best quality:** Anthropic claude-3-5-sonnet (~€0.04 per full run).
+
+To keep the app sustainable regardless of provider, each browser session is capped at
+**10 AI generations** (the initial "Generate" click counts as 1, each refinement chat
+instruction also counts as 1).
 
 ---
 
@@ -165,46 +195,52 @@ docker run -p 8501:8501 \
 
 ## 📋 Usage Guide
 
-### Step 1 — Configure (sidebar)
+The app itself includes a **"📘 How to Use" tab** with the same walkthrough. The whole
+interface — including this guide — switches between English and French with the toggle
+at the very top of the page.
 
-- Select your LLM provider and model
-- Enter your API key
-- Choose the output language
+### Step 1 — Pick the interface and output language (top of the page)
 
-### Step 2 — Provide inputs (tab "Entrée")
+These are the first two controls on the page: the **interface language** (English/French,
+affects every label and button) and the **output language** (English, Français, Español,
+Deutsch, Italiano — affects only the *generated* documents, independent of the interface
+language and of the language of your input CV/job description).
+
+### Step 2 — Provide inputs (tab "📤 Input")
 
 - **CV**: upload a PDF, DOCX, or TXT file — or paste the text directly
-- **Job description**: same options
-- Click **🚀 Générer**
+- **Job description**: same options, **optional** — without it you still get a general
+  ATS analysis and a generally optimized CV
+- Click **🚀 Generate**
 
-Processing takes 30–90 seconds (3 API calls).
+Processing takes 30–90 seconds (3 API calls), and counts as 1 of your 10 AI generations
+for the session.
 
-### Step 3 — Review results
+### Step 3 — Review results (tab "✨ Results")
 
-**Tab "🔍 Analyse du CV"**
+At the top: pick one of 3 ready-made visual styles, or switch to Advanced mode to set your
+own main text color, heading color, and font (4 choices) — the preview updates instantly
+and never calls the AI. Below that, two sub-tabs:
+
+- **CV** — the ATS-optimized CV, DOCX/PDF download buttons, the change log, and a
+  collapsible **"🔄 Refine this CV with AI"** chat. Each refinement instruction shows its
+  proposed changes as a line-by-line diff: accept or ignore each change individually, or
+  use Accept All / Ignore All. Accepting is final for that session — a one-time warning
+  reminds you before the first acceptance.
+- **Cover Letter** — the letter, DOCX/PDF download buttons, and a similar refine chat;
+  each response can replace the current letter with one confirmation click.
+
+A "Download everything" ZIP button bundles both current documents.
+
+### Step 4 — Check the analysis (tab "🔍 CV Analysis")
 - Match score (0-100)
 - Key strengths relative to the job
 - Missing keywords and skills
 - ATS technical issues
 - Top 5 priority actions
 
-**Tab "✨ Sortie optimisée"**
-- Full ATS-optimized CV with download button
-- Side panel explaining every change and why
-- Complete cover letter with download button
-- "Download all" ZIP button
-
-### Step 4 — Refine (tab "💬 Affiner avec l'IA")
-
-Type natural language instructions to adjust the outputs. Examples:
-
-- `"Rends le ton plus formel"`
-- `"Ajoute des mots-clés liés à la gestion de projet Agile"`
-- `"Raccourcis la lettre de motivation de 30%"`
-- `"Reformule le résumé pour un poste senior"`
-- `"Make the cover letter sound less formal"`
-
-Each refined version can be downloaded as DOCX.
+Each refinement instruction (CV or cover letter) counts as 1 of the 10 AI generations
+per session.
 
 ---
 
@@ -225,12 +261,18 @@ Each prompt:
 - Uses strict section structure (forces markdown headings)
 - Requests quantified outputs
 - Uses a `---CHANGES---` delimiter to split CV from explanation in one call
+- Falls back to a general-purpose version of the task when no job description is provided
 
-### DOCX export
+### Visual style & DOCX/PDF export
 
-The exporter parses markdown produced by the LLM:
-- `#` → H1 (centered, dark blue)
-- `##` → H2 (uppercase, with bottom border)
+`styles.py` defines `StyleConfig` (main text color, heading color, accent color, font,
+plus per-template `heading_uppercase`/`heading_border` flags) and 3 ready-made templates
+and 4 font choices. `preview.py` renders any `StyleConfig` as local HTML for an instant,
+zero-token preview. `exporters.py` (DOCX) and `pdf_exporter.py` (PDF, via `fpdf2`) both
+apply the same `StyleConfig` when building the export, parsing the markdown produced by
+the LLM:
+- `#` → H1 (centered, heading color)
+- `##` → H2 (uppercase + bottom border, both togglable per style)
 - `###` → H3
 - `-` / `*` → bullet list
 - `1.` → numbered list
@@ -238,7 +280,17 @@ The exporter parses markdown produced by the LLM:
 - `*text*` → italic inline
 - `---` → horizontal rule (border)
 
-ATS-safe: no tables, no text boxes, no floating elements.
+ATS-safe: no tables, no text boxes, no floating elements. LLM responses are also passed
+through `utils.strip_fences()` to drop any stray ` ``` ` code-fence wrapper before display
+or export.
+
+### Diff-based CV refinement
+
+`differ.py` computes a line-level diff (`difflib`) between the current accepted CV and a
+new AI-refined version. Each chunk (`equal` / `added` / `removed` / `replaced`) gets a
+`chunk_id`; per-chunk accept/ignore decisions are stored in session state and
+`rebuild_text()` reconstructs the working CV from those decisions — nothing is applied
+until explicitly accepted, and pure deletions only take effect via "Accept all".
 
 ---
 
@@ -256,9 +308,3 @@ streamlit run app.py --server.runOnSave true
 ## 📜 License
 
 MIT — see [LICENSE](LICENSE) file.
-
----
-
-## ⚠️ Disclaimer
-
-This tool assists in CV writing. Always review AI-generated content before submitting an application. Do not present AI-generated text as your own without verification and personalization.

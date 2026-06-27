@@ -1,39 +1,39 @@
 """
-test_anonymizer.py — Vérifie ce que l'anonymiseur détecte et remplace.
-Lance avec : python test_anonymizer.py
+test_anonymizer.py — Checks what the anonymizer detects and replaces.
+Run with: python test_anonymizer.py
 
-Tu peux modifier CV_SAMPLE ci-dessous avec ton propre texte.
+You can replace the CV_SAMPLE block below with your own text to test.
 """
 
 import sys
 import os
 
-# Permet de lancer le script depuis la racine du projet
+# Allows running the script from the project root
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from src.anonymizer import anonymize
 
-# ─── CV de test ───────────────────────────────────────────────────────────────
-# Remplace ce bloc par ton propre texte pour tester
+# ─── Sample CV ────────────────────────────────────────────────────────────────
+# Replace this block with your own text to test
 
 CV_SAMPLE = """
-Marie Dupont
-marie.dupont@gmail.com | +33 6 12 34 56 78
-linkedin.com/in/marie-dupont | github.com/mariedupont
-12 rue des Lilas, 75011 Paris
-https://mariedupont.dev
+John Doe
+john.doe@gmail.com | +1 555 123 4567
+linkedin.com/in/john-doe | github.com/johndoe
+123 Main Street, 75011 Paris
+https://johndoe.dev
 
-EXPÉRIENCE PROFESSIONNELLE
+PROFESSIONAL EXPERIENCE
 
-Chef de Projet Digital — Acme Corp (2021–2024)
-- Géré une équipe de 8 personnes
-- Augmenté le taux de conversion de 32%
+Digital Project Manager — Acme Corp (2021-2024)
+- Managed a team of 8 people
+- Increased conversion rate by 32%
 
-FORMATION
+EDUCATION
 
-Master Management — HEC Paris (2019)
+Master in Management — HEC Paris (2019)
 
-COMPÉTENCES
+SKILLS
 Python, SQL, Figma, Jira
 """
 
@@ -41,62 +41,62 @@ Python, SQL, Figma, Jira
 
 def run_test(text: str):
     print("=" * 60)
-    print("TEXTE ORIGINAL")
+    print("ORIGINAL TEXT")
     print("=" * 60)
     print(text)
 
     result = anonymize(text)
 
     print("\n" + "=" * 60)
-    print("TEXTE ANONYMISÉ (envoyé à l'IA)")
+    print("ANONYMIZED TEXT (sent to the AI)")
     print("=" * 60)
     print(result.anonymized_text)
 
     print("\n" + "=" * 60)
-    print(f"ÉLÉMENTS REMPLACÉS ({len(result.summary)})")
+    print(f"REPLACED ELEMENTS ({len(result.summary)})")
     print("=" * 60)
     if result.summary:
         for item in result.summary:
             print(f"  • {item}")
     else:
-        print("  Aucun élément détecté.")
+        print("  No element detected.")
 
     print("\n" + "=" * 60)
-    print("TABLE DE CORRESPONDANCE (placeholders → valeurs réelles)")
+    print("MAPPING TABLE (placeholders → real values)")
     print("=" * 60)
     if result.replacements:
         for placeholder, original in result.replacements.items():
             print(f"  {placeholder:30s} → {original}")
     else:
-        print("  Vide.")
+        print("  Empty.")
 
     print("\n" + "=" * 60)
-    print("VÉRIFICATION RAPIDE")
+    print("QUICK CHECK")
     print("=" * 60)
     # Check that originals are gone from anonymized text
     all_ok = True
     for placeholder, original in result.replacements.items():
         if original in result.anonymized_text:
-            print(f"  ❌ '{original}' est encore présent dans le texte anonymisé !")
+            print(f"  ❌ '{original}' is still present in the anonymized text!")
             all_ok = False
     if all_ok and result.replacements:
-        print("  ✅ Toutes les valeurs sensibles ont été remplacées.")
+        print("  ✅ All sensitive values were replaced.")
     elif not result.replacements:
-        print("  ⚠️  Rien n'a été remplacé — vérifie que le texte contient des données personnelles.")
+        print("  ⚠️  Nothing was replaced — check that the text contains personal data.")
 
 
 if __name__ == "__main__":
-    # Si un fichier est passé en argument, l'utiliser
+    # If a file is passed as an argument, use it
     if len(sys.argv) > 1:
         filepath = sys.argv[1]
         if not os.path.exists(filepath):
-            print(f"Fichier introuvable : {filepath}")
+            print(f"File not found: {filepath}")
             sys.exit(1)
         with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
             text = f.read()
-        print(f"Test sur le fichier : {filepath}\n")
+        print(f"Testing file: {filepath}\n")
     else:
         text = CV_SAMPLE
-        print("Test sur le CV d'exemple (modifie CV_SAMPLE dans le script pour tester le tien)\n")
+        print("Testing the sample CV (edit CV_SAMPLE in this script to test your own)\n")
 
     run_test(text)
