@@ -11,6 +11,7 @@ from src.parsers import parse_document
 from src.llm_client import LLMClient, PROVIDERS
 from src.prompts import PromptBuilder
 from src.exporters import DOCXExporter
+from src.anonymizer import anonymize
 
 # ─── Page config ──────────────────────────────────────────────────────────────
 
@@ -141,13 +142,9 @@ with st.expander("⚙️ Configuration", expanded=False):
         )
         model = st.selectbox("Modèle", options=PROVIDERS[provider]["models"])
     with col_cfg2:
-        language = st.selectbox(
-            "Langue de sortie",
-            ["Français", "English", "Español", "Deutsch", "Italiano"],
-        )
-        st.session_state.language = language
         st.caption(f"💰 {PROVIDERS[provider]['cost_info']}")
         st.caption(f"🆓 {'✅ Gratuit' if PROVIDERS[provider]['free'] else '❌ Payant'}")
+        st.caption("La langue de sortie se choisit dans l'onglet Entrée.")
     st.markdown(
         "**Clés API :** "
         "[Anthropic](https://console.anthropic.com/) · "
@@ -200,6 +197,29 @@ with tab_input:
 
     st.divider()
 
+    # ── Langue de sortie (prominent, always visible) ──────────────────────────
+    st.subheader("🌐 Langue du CV et de la lettre produits")
+    st.caption("Peu importe la langue du CV en entrée, les documents générés seront dans cette langue.")
+    output_language = st.selectbox(
+        "Langue de sortie",
+        ["Français", "English", "Español", "Deutsch", "Italiano"],
+        label_visibility="collapsed",
+    )
+    st.session_state.language = output_language
+
+    # ── Privacy option ────────────────────────────────────────────────────────
+    st.divider()
+    anonymize_data = st.toggle(
+        "🔒 Anonymiser mes données personnelles avant envoi à l'IA",
+        value=True,
+        help=(
+            "Remplace nom, email, téléphone, LinkedIn, adresse par des placeholders "
+            "avant d'envoyer à l'API. Le résultat contiendra ces placeholders — "
+            "complète-les avant d'envoyer ta candidature."
+        ),
+    )
+
+    st.divider()
     generate_btn = st.button("🚀 Générer", type="primary", use_container_width=True)
 
     if generate_btn:
@@ -235,6 +255,22 @@ with tab_input:
                 st.error(err)
             st.stop()
 
+        # ── Anonymize PII before sending to LLM ──────────────────────────────
+        cv_for_llm = cv_content
+        if anonymize_data:
+            anon_result = anonymize(cv_content)
+            cv_for_llm = anon_result.anonymized_text
+            if anon_result.summary:
+                with st.expander(f"🔒 {len(anon_result.summary)} élément(s) anonymisé(s) — détails"):
+                    for item in anon_result.summary:
+                        st.caption(f"• {item}")
+                    st.caption(
+                        "Ces placeholders apparaîtront dans les documents générés. "
+                        "Remplace-les par tes vraies informations avant envoi."
+                    )
+            else:
+                st.info("🔒 Aucune donnée personnelle détectée automatiquement.")
+
         # ── Init LLM
         try:
             llm = LLMClient(provider=provider, api_key=api_key, model=model)
@@ -247,7 +283,7 @@ with tab_input:
         st.session_state.job_content = job_content
         st.session_state.messages = []  # Reset chat on new generation
 
-        prompt_builder = PromptBuilder(language=language)
+        prompt_builder = PromptBuilder(language=output_language)
 
         # ── Generate
         progress = st.progress(0, text="Démarrage...")
@@ -256,14 +292,14 @@ with tab_input:
             progress.progress(10, text="Analyse du CV en cours...")
             st.session_state.analysis = llm.generate(
                 system="Tu es un expert RH et spécialiste ATS avec 15 ans d'expérience.",
-                user=prompt_builder.analysis(cv_content, job_content),
+                user=prompt_builder.analysis(cv_for_llm, job_content),
                 max_tokens=3000,
             )
 
             progress.progress(45, text="Optimisation ATS du CV...")
             raw_opt = llm.generate(
                 system="Tu es un expert rédacteur de CV et spécialiste ATS.",
-                user=prompt_builder.optimize_cv(cv_content, job_content),
+                user=prompt_builder.optimize_cv(cv_for_llm, job_content),
                 max_tokens=4000,
             )
             st.session_state.optimized_cv, st.session_state.changes = _split_cv_and_changes(raw_opt)
@@ -271,7 +307,7 @@ with tab_input:
             progress.progress(80, text="Rédaction de la lettre de motivation...")
             st.session_state.cover_letter = llm.generate(
                 system="Tu es expert en rédaction de lettres de motivation percutantes.",
-                user=prompt_builder.cover_letter(cv_content, job_content),
+                user=prompt_builder.cover_letter(cv_for_llm, job_content),
                 max_tokens=2000,
             )
 
