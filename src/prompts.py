@@ -26,20 +26,27 @@ class PromptBuilder:
         Prompt: analyze the original CV against the job description.
         Output: structured markdown report.
         """
+        if job.strip():
+            job_block = f"=== FICHE DE POSTE ===\n{job}"
+            match_section = """## 1. Score de correspondance (0-100)
+Donne un score chiffré et justifie-le en 3 phrases maximum. Sois honnête, même si le score est faible."""
+        else:
+            job_block = "=== FICHE DE POSTE ===\nAucune fiche de poste fournie — réalise une analyse générale du CV."
+            match_section = """## 1. Qualité globale du CV (0-100)
+Évalue la qualité globale du CV (clarté, structure, impact) en l'absence de fiche de poste. Justifie en 3 phrases."""
+
         return f"""{self._lang_instruction}
 
-Analyse ce CV par rapport à cette fiche de poste avec un regard d'expert RH et spécialiste ATS.
+Analyse ce CV avec un regard d'expert RH et spécialiste ATS.
 
 === CV ORIGINAL ===
 {cv}
 
-=== FICHE DE POSTE ===
-{job}
+{job_block}
 
 Produis une analyse structurée avec exactement ces sections :
 
-## 1. Score de correspondance (0-100)
-Donne un score chiffré et justifie-le en 3 phrases maximum. Sois honnête, même si le score est faible.
+{match_section}
 
 ## 2. Points forts du CV
 Liste 3 à 5 éléments du CV qui sont bien alignés avec le poste. Une ligne par point.
@@ -67,26 +74,36 @@ Sois direct. Ne minimise pas les problèmes pour ménager le candidat."""
 
     def optimize_cv(self, cv: str, job: str) -> str:
         """
-        Prompt: rewrite the CV to be ATS-optimized for the specific job.
+        Prompt: rewrite the CV to be ATS-optimized for the specific job (or generally if no job).
         Output: optimized CV in markdown + separator + changes explanation.
         """
+        if job.strip():
+            job_block = f"=== FICHE DE POSTE ===\n{job}"
+            task_desc = "parfaitement optimisé ATS pour ce poste spécifique"
+            keyword_rule = "- Intègre naturellement les mots-clés exacts de la fiche de poste (pas du keyword stuffing)"
+            relevance_rule = "{relevance_rule}"
+        else:
+            job_block = "=== FICHE DE POSTE ===\nAucune fiche fournie — optimise pour un profil ATS généraliste."
+            task_desc = "optimisé ATS de façon générale, sans poste cible spécifique"
+            keyword_rule = "- Utilise des mots-clés génériques forts pour le secteur/métier identifié dans le CV"
+            relevance_rule = "- Mets en avant les compétences les plus transférables"
+
         return f"""{self._lang_instruction}
 
-Réécris ce CV pour qu'il soit parfaitement optimisé ATS pour ce poste spécifique.
+Réécris ce CV pour qu'il soit {task_desc}.
 
 === CV ORIGINAL ===
 {cv}
 
-=== FICHE DE POSTE ===
-{job}
+{job_block}
 
 === RÈGLES POUR LE CV OPTIMISÉ ===
 
 **Contenu :**
-- Intègre naturellement les mots-clés exacts de la fiche de poste (pas du keyword stuffing)
+{keyword_rule}
 - Quantifie TOUTES les réalisations possibles — si la donnée est inconnue, mets [CHIFFRE À COMPLÉTER]
 - Commence chaque bullet point par un verbe d'action fort
-- Supprime les informations non pertinentes pour CE poste
+{relevance_rule}
 
 **Structure ATS-friendly :**
 - En-tête : Nom | Contact | LinkedIn | Ville
@@ -115,12 +132,18 @@ Sois exhaustif mais concis. Cette section est destinée au candidat pour compren
 
     def cover_letter(self, cv: str, job: str) -> str:
         """
-        Prompt: write a tailored, non-generic cover letter.
+        Prompt: write a tailored cover letter. If no job description, write a general one.
         Output: the letter only, in markdown.
         """
+        if not job.strip():
+            job_note = "Aucune fiche de poste fournie. Rédige une lettre de motivation générale mettant en valeur le profil du candidat, sans cibler un poste spécifique. Utilise [NOM DE L'ENTREPRISE] et [POSTE VISÉ] comme placeholders."
+        else:
+            job_note = ""
+
         return f"""{self._lang_instruction}
 
 Rédige une lettre de motivation percutante pour cette candidature.
+{job_note}
 
 === CV DU CANDIDAT ===
 {cv}

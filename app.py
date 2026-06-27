@@ -138,6 +138,8 @@ def _load_config() -> tuple[str, str, str]:
     To configure on Streamlit Cloud: Settings → Secrets
     """
     import os
+    from dotenv import load_dotenv
+    load_dotenv()  # Charge le fichier .env si présent (usage local)
 
     # Try each provider in order of preference (free first)
     candidates = [
@@ -236,6 +238,11 @@ with tab_input:
             "complète-les avant d'envoyer ta candidature."
         ),
     )
+    debug_mode = st.toggle(
+        "🐛 Mode debug — afficher le texte envoyé à l'IA",
+        value=False,
+        help="Affiche le contenu exact transmis à l'API, après anonymisation. Utile pour vérifier ce qui part.",
+    )
 
     st.divider()
     generate_btn = st.button("🚀 Générer", type="primary", use_container_width=True)
@@ -265,8 +272,7 @@ with tab_input:
                 errors.append(f"Erreur lecture fiche de poste : {e}")
         elif job_text_paste.strip():
             job_content = job_text_paste.strip()
-        else:
-            errors.append("Fiche de poste manquante.")
+        # No error if empty — job description is optional
 
         if errors:
             for err in errors:
@@ -279,15 +285,31 @@ with tab_input:
             anon_result = anonymize(cv_content)
             cv_for_llm = anon_result.anonymized_text
             if anon_result.summary:
-                with st.expander(f"🔒 {len(anon_result.summary)} élément(s) anonymisé(s) — détails"):
-                    for item in anon_result.summary:
-                        st.caption(f"• {item}")
+                with st.expander(f"🔒 {len(anon_result.summary)} élément(s) anonymisé(s) — clique pour voir"):
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        st.markdown("**Remplacé par**")
+                        for placeholder in anon_result.replacements:
+                            st.code(placeholder, language=None)
+                    with col_b:
+                        st.markdown("**Valeur originale**")
+                        for original in anon_result.replacements.values():
+                            st.code(original, language=None)
                     st.caption(
                         "Ces placeholders apparaîtront dans les documents générés. "
                         "Remplace-les par tes vraies informations avant envoi."
                     )
             else:
                 st.info("🔒 Aucune donnée personnelle détectée automatiquement.")
+
+        # ── Debug mode ────────────────────────────────────────────────────────
+        if debug_mode:
+            with st.expander("🐛 Debug — texte exact envoyé à l'IA", expanded=True):
+                st.markdown("**CV (après anonymisation) :**")
+                st.text_area("CV envoyé", value=cv_for_llm, height=200, disabled=True, key="debug_cv")
+                st.markdown("**Fiche de poste :**")
+                st.text_area("Job envoyé", value=job_content, height=150, disabled=True, key="debug_job")
+                st.caption(f"Provider : {_provider} | Modèle : {_model}")
 
         # ── Init LLM
         try:
