@@ -127,36 +127,54 @@ def _build_zip(cv_bytes: bytes, cl_bytes: bytes) -> bytes:
 
 # ─── Sidebar ──────────────────────────────────────────────────────────────────
 
-with st.expander("⚙️ Configuration", expanded=False):
-    col_cfg1, col_cfg2 = st.columns([2, 1])
-    with col_cfg1:
-        provider = st.selectbox(
-            "Fournisseur IA",
-            options=list(PROVIDERS.keys()),
-            help="Gemini et Groq ont des niveaux gratuits.",
-        )
-        api_key = st.text_input(
-            f"Clé API ({provider})",
-            type="password",
-            placeholder="sk-...",
-        )
-        model = st.selectbox("Modèle", options=PROVIDERS[provider]["models"])
-    with col_cfg2:
-        st.caption(f"💰 {PROVIDERS[provider]['cost_info']}")
-        st.caption(f"🆓 {'✅ Gratuit' if PROVIDERS[provider]['free'] else '❌ Payant'}")
-        st.caption("La langue de sortie se choisit dans l'onglet Entrée.")
-    st.markdown(
-        "**Clés API :** "
-        "[Anthropic](https://console.anthropic.com/) · "
-        "[Google](https://aistudio.google.com/app/apikey) · "
-        "[Groq](https://console.groq.com/keys)"
-    )
+# ─── LLM config — loaded from Streamlit secrets or .env (not exposed to users) ─
+
+def _load_config() -> tuple[str, str, str]:
+    """
+    Load provider / api_key / model from Streamlit secrets or environment variables.
+    Priority: st.secrets > environment variables.
+
+    To configure locally: set variables in .env
+    To configure on Streamlit Cloud: Settings → Secrets
+    """
+    import os
+
+    # Try each provider in order of preference (free first)
+    candidates = [
+        ("GOOGLE_API_KEY",    "Google (Gemini)",    "gemini-1.5-flash"),
+        ("GROQ_API_KEY",      "Groq (Llama)",       "llama-3.3-70b-versatile"),
+        ("ANTHROPIC_API_KEY", "Anthropic (Claude)", "claude-3-5-haiku-20241022"),
+    ]
+
+    for env_var, provider, model in candidates:
+        # Check Streamlit secrets first
+        try:
+            key = st.secrets.get(env_var, "")
+        except Exception:
+            key = ""
+        # Fall back to environment variable
+        if not key:
+            key = os.environ.get(env_var, "")
+        if key:
+            return provider, key, model
+
+    return "", "", ""
+
+
+_provider, _api_key, _model = _load_config()
 
 
 # ─── Main layout ──────────────────────────────────────────────────────────────
 
 st.title("📄 CV Optimizer AI")
 st.markdown("*CV + fiche de poste → CV ATS-optimisé, lettre de motivation, analyse détaillée.*")
+
+if not _api_key:
+    st.error(
+        "⚠️ Aucune clé API configurée. "
+        "Ajoute `GOOGLE_API_KEY`, `GROQ_API_KEY` ou `ANTHROPIC_API_KEY` "
+        "dans les secrets Streamlit (Settings → Secrets) ou dans un fichier `.env`."
+    )
 
 tab_input, tab_analysis, tab_output, tab_refine = st.tabs([
     "📤 Entrée",
@@ -226,7 +244,7 @@ with tab_input:
         # ── Validation
         errors = []
         if not api_key:
-            errors.append("Clé API manquante dans la barre latérale.")
+            errors.append("Clé API non configurée. Contacte l'administrateur de l'app.")
 
         cv_content = ""
         if cv_file:
@@ -273,7 +291,7 @@ with tab_input:
 
         # ── Init LLM
         try:
-            llm = LLMClient(provider=provider, api_key=api_key, model=model)
+            llm = LLMClient(provider=_provider, api_key=_api_key, model=_model)
         except Exception as e:
             st.error(f"Initialisation LLM échouée : {e}")
             st.stop()
