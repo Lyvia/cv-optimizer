@@ -21,7 +21,7 @@ from src.utils import strip_fences
 from src.differ import compute_diff, rebuild_text
 from src import styles, guide_content
 from src.styles import StyleConfig
-from src.preview import render_preview_html, SAMPLE_CV_PREVIEW, SAMPLE_LETTER_PREVIEW
+from src.preview import render_preview_html
 from src.i18n import t as i18n_t
 
 logger = logging.getLogger(__name__)
@@ -123,11 +123,12 @@ def _init_state():
         "style_config": styles.DEFAULT_STYLE,
         "current_cv": None,
         "current_cl": None,
-        "cv_messages": [],
-        "cl_messages": [],
         "cv_pending_diff": None,
+        "cv_pending_change_note": None,
         "cv_diff_round": 0,
         "cl_pending_response": None,
+        "cl_pending_change_note": None,
+        "cl_refine_count": 0,
         "accept_warning_shown": False,
         "show_accept_warning_once": False,
     }
@@ -218,46 +219,46 @@ def _render_text_block(lines: list[str], bg: str, fg: str, strike: bool = False)
 
 
 def _render_diff_view(chunks):
-    """Render a unified (single-column, mobile-safe) diff with per-chunk
-    accept/ignore controls, then Accept All / Ignore All. Rebuilds
-    current_cv into session state on every decision."""
+    """
+    Render only the changes still awaiting a decision — unchanged context
+    and already-resolved chunks are never (re)displayed, so the review
+    list shrinks as the user goes instead of accumulating. Once nothing
+    is left pending, the whole diff is cleared (Accept All / Ignore All
+    disappear with it). Runs inside a fragment, so every accept/ignore
+    only re-renders this fragment, not the whole page.
+    """
     actionable = [c for c in chunks if c.type != "equal"]
     if not actionable:
         st.info(tr("diff_no_changes"))
         return
 
-    for chunk in chunks:
-        if chunk.type == "equal":
-            _render_text_block(chunk.old_lines, bg="", fg="#555555")
-            continue
+    pending = [c for c in actionable if _diff_status(c.chunk_id) == "pending"]
+    if not pending:
+        st.session_state.cv_pending_diff = None
+        st.session_state.cv_pending_change_note = None
+        return
 
-        status = _diff_status(chunk.chunk_id)
-
+    for chunk in pending:
         if chunk.type == "removed":
             _render_text_block(chunk.old_lines, bg="#fde8e8", fg="#842029", strike=True)
-            continue
-
-        if chunk.type == "added":
+        elif chunk.type == "added":
             _render_text_block(chunk.new_lines, bg="#e6f4ea", fg="#1e7e34")
         elif chunk.type == "replaced":
             _render_text_block(chunk.old_lines, bg="#fde8e8", fg="#842029", strike=True)
             _render_text_block(chunk.new_lines, bg="#e6f4ea", fg="#1e7e34")
 
-        if status == "pending":
-            bcol1, bcol2 = st.columns(2)
-            with bcol1:
-                if st.button(tr("diff_accept_btn"), key=f"accept_{chunk.chunk_id}", use_container_width=True):
-                    _maybe_show_accept_warning()
-                    _set_diff_status(chunk.chunk_id, "accepted")
-                    st.session_state.current_cv = rebuild_text(chunks, _collect_diff_statuses(chunks))
-                    st.rerun()
-            with bcol2:
-                if st.button(tr("diff_ignore_btn"), key=f"ignore_{chunk.chunk_id}", use_container_width=True):
-                    _set_diff_status(chunk.chunk_id, "ignored")
-                    st.session_state.current_cv = rebuild_text(chunks, _collect_diff_statuses(chunks))
-                    st.rerun()
-        else:
-            st.caption(f"({status})")
+        bcol1, bcol2 = st.columns(2)
+        with bcol1:
+            if st.button(tr("diff_accept_btn"), key=f"accept_{chunk.chunk_id}", use_container_width=True):
+                _maybe_show_accept_warning()
+                _set_diff_status(chunk.chunk_id, "accepted")
+                st.session_state.current_cv = rebuild_text(chunks, _collect_diff_statuses(chunks))
+                st.rerun(scope="fragment")
+        with bcol2:
+            if st.button(tr("diff_ignore_btn"), key=f"ignore_{chunk.chunk_id}", use_container_width=True):
+                _set_diff_status(chunk.chunk_id, "ignored")
+                st.session_state.current_cv = rebuild_text(chunks, _collect_diff_statuses(chunks))
+                st.rerun(scope="fragment")
 
     st.divider()
     col_a, col_b = st.columns(2)
@@ -267,13 +268,199 @@ def _render_diff_view(chunks):
             for c in chunks:
                 _set_diff_status(c.chunk_id, "accepted")
             st.session_state.current_cv = rebuild_text(chunks, _collect_diff_statuses(chunks))
-            st.rerun()
+            st.session_state.cv_pending_diff = None
+            st.session_state.cv_pending_change_note = None
+            st.rerun(scope="fragment")
     with col_b:
         if st.button(tr("diff_ignore_all_btn"), key=f"ignore_all_{st.session_state.cv_diff_round}", use_container_width=True):
             for c in chunks:
                 _set_diff_status(c.chunk_id, "ignored")
             st.session_state.current_cv = rebuild_text(chunks, _collect_diff_statuses(chunks))
-            st.rerun()
+            st.session_state.cv_pending_diff = None
+            st.session_state.cv_pending_change_note = None
+            st.rerun(scope="fragment")
+
+
+@st.fragment
+def _render_cv_subtab(style: StyleConfig):
+    """CV sub-tab: content + downloads + changes log + refine-with-diff.
+    A fragment so accept/ignore/refine only redraw this block, not the
+    whole page (preserves scroll position elsewhere)."""
+    if st.session_state.show_accept_warning_once:
+        st.warning(tr("diff_irreversible_warning"))
+        st.session_state.show_accept_warning_once = False
+
+    exporter = DOCXExporter()
+    pdf_exporter = PDFExporter()
+
+    st.subheader(tr("results_cv_heading"))
+    st.markdown(render_preview_html(st.session_state.current_cv, style), unsafe_allow_html=True)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        try:
+            cv_docx = exporter.cv_to_docx(st.session_state.current_cv, style=style)
+            st.download_button(tr("dl_cv_docx"), data=cv_docx, file_name="Optimized_CV.docx", mime=DOCX_MIME, key="dl_cv_docx_btn")
+        except Exception as e:
+            st.warning(tr("export_unavailable").format(error=e))
+    with col2:
+        try:
+            cv_pdf = pdf_exporter.cv_to_pdf(st.session_state.current_cv, style=style)
+            st.download_button(tr("dl_cv_pdf"), data=cv_pdf, file_name="Optimized_CV.pdf", mime=PDF_MIME, key="dl_cv_pdf_btn")
+        except Exception as e:
+            st.warning(tr("export_unavailable").format(error=e))
+
+    st.divider()
+    st.subheader(tr("results_changes_heading"))
+    st.markdown(
+        f'<div class="result-box">{st.session_state.changes}</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.divider()
+    cv_expanded = st.session_state.cv_diff_round > 0
+    with st.expander(tr("refine_cv_expander_title"), expanded=cv_expanded):
+        st.caption(tr("refine_chat_examples"))
+
+        # Review area first — whatever is still pending from the last
+        # refinement — so the input below is reached only after reviewing.
+        if st.session_state.cv_pending_change_note:
+            st.caption(st.session_state.cv_pending_change_note)
+        if st.session_state.cv_pending_diff:
+            _render_diff_view(st.session_state.cv_pending_diff)
+
+        quota_exhausted = _quota_exhausted()
+        st.caption(_quota_caption_text())
+        if quota_exhausted:
+            st.error(tr("quota_exhausted_error").format(max=MAX_AI_CALLS_PER_SESSION))
+
+        placeholder = tr("refine_quota_placeholder") if quota_exhausted else tr("refine_chat_placeholder")
+        if cv_instruction := st.chat_input(placeholder, disabled=quota_exhausted, key="cv_chat_input"):
+            with st.spinner(tr("refine_processing")):
+                pb = PromptBuilder(language=st.session_state.language)
+                st.session_state.ai_calls_used += 1
+                success = False
+                try:
+                    raw_response = st.session_state.llm.generate(
+                        system="You are an expert CV writer. Apply the user's instructions precisely.",
+                        user=pb.refine(st.session_state.current_cv, cv_instruction),
+                        max_tokens=3000,
+                    )
+                    document, change_note = _split_cv_and_changes(strip_fences(raw_response))
+                    st.session_state.cv_diff_round += 1
+                    st.session_state.cv_pending_diff = compute_diff(
+                        st.session_state.current_cv,
+                        document,
+                        round_id=str(st.session_state.cv_diff_round),
+                    )
+                    st.session_state.cv_pending_change_note = change_note
+                    success = True
+                except Exception as e:
+                    st.error(tr("refine_error").format(error=e))
+            if success:
+                st.rerun(scope="fragment")
+
+        st.divider()
+        st.markdown(tr("diff_download_current_version"))
+        col3, col4 = st.columns(2)
+        with col3:
+            try:
+                cur_docx = exporter.cv_to_docx(st.session_state.current_cv, style=style)
+                st.download_button(tr("dl_cv_current_docx"), data=cur_docx, file_name="Refined_CV.docx", mime=DOCX_MIME, key="dl_cv_current_docx_btn")
+            except Exception:
+                pass
+        with col4:
+            try:
+                cur_pdf = pdf_exporter.cv_to_pdf(st.session_state.current_cv, style=style)
+                st.download_button(tr("dl_cv_current_pdf"), data=cur_pdf, file_name="Refined_CV.pdf", mime=PDF_MIME, key="dl_cv_current_pdf_btn")
+            except Exception:
+                pass
+
+
+@st.fragment
+def _render_cl_subtab(style: StyleConfig):
+    """Cover letter sub-tab: content + downloads + refine-and-replace.
+    Same fragment isolation as the CV sub-tab."""
+    if st.session_state.show_accept_warning_once:
+        st.warning(tr("diff_irreversible_warning"))
+        st.session_state.show_accept_warning_once = False
+
+    exporter = DOCXExporter()
+    pdf_exporter = PDFExporter()
+
+    st.subheader(tr("results_letter_heading"))
+    st.markdown(render_preview_html(st.session_state.current_cl, style), unsafe_allow_html=True)
+
+    col5, col6 = st.columns(2)
+    with col5:
+        try:
+            cl_docx = exporter.cover_letter_to_docx(st.session_state.current_cl, style=style)
+            st.download_button(tr("dl_letter_docx"), data=cl_docx, file_name="Cover_Letter.docx", mime=DOCX_MIME, key="dl_letter_docx_btn")
+        except Exception as e:
+            st.warning(tr("export_unavailable").format(error=e))
+    with col6:
+        try:
+            cl_pdf = pdf_exporter.cover_letter_to_pdf(st.session_state.current_cl, style=style)
+            st.download_button(tr("dl_letter_pdf"), data=cl_pdf, file_name="Cover_Letter.pdf", mime=PDF_MIME, key="dl_letter_pdf_btn")
+        except Exception as e:
+            st.warning(tr("export_unavailable").format(error=e))
+
+    st.divider()
+    cl_expanded = st.session_state.cl_refine_count > 0
+    with st.expander(tr("refine_letter_expander_title"), expanded=cl_expanded):
+        if st.session_state.cl_pending_response:
+            if st.session_state.cl_pending_change_note:
+                st.caption(st.session_state.cl_pending_change_note)
+            st.markdown(tr("letter_refined_heading"))
+            st.markdown(st.session_state.cl_pending_response)
+
+            if st.button(tr("letter_replace_btn"), key="replace_letter_btn"):
+                _maybe_show_accept_warning()
+                st.session_state.current_cl = st.session_state.cl_pending_response
+                st.session_state.cl_pending_response = None
+                st.session_state.cl_pending_change_note = None
+                st.rerun(scope="fragment")
+
+            col7, col8 = st.columns(2)
+            with col7:
+                try:
+                    pending_docx = exporter.cover_letter_to_docx(st.session_state.cl_pending_response, style=style)
+                    st.download_button(tr("dl_letter_docx"), data=pending_docx, file_name="Refined_Cover_Letter.docx", mime=DOCX_MIME, key="dl_cl_pending_docx_btn")
+                except Exception:
+                    pass
+            with col8:
+                try:
+                    pending_pdf = pdf_exporter.cover_letter_to_pdf(st.session_state.cl_pending_response, style=style)
+                    st.download_button(tr("dl_letter_pdf"), data=pending_pdf, file_name="Refined_Cover_Letter.pdf", mime=PDF_MIME, key="dl_cl_pending_pdf_btn")
+                except Exception:
+                    pass
+
+        quota_exhausted = _quota_exhausted()
+        st.caption(_quota_caption_text())
+        if quota_exhausted:
+            st.error(tr("quota_exhausted_error").format(max=MAX_AI_CALLS_PER_SESSION))
+
+        placeholder = tr("refine_quota_placeholder") if quota_exhausted else tr("refine_chat_placeholder")
+        if cl_instruction := st.chat_input(placeholder, disabled=quota_exhausted, key="cl_chat_input"):
+            with st.spinner(tr("refine_processing")):
+                pb = PromptBuilder(language=st.session_state.language)
+                st.session_state.ai_calls_used += 1
+                success = False
+                try:
+                    raw_response = st.session_state.llm.generate(
+                        system="You are an expert at writing compelling cover letters. Apply the user's instructions precisely.",
+                        user=pb.refine(st.session_state.current_cl, cl_instruction),
+                        max_tokens=2000,
+                    )
+                    document, change_note = _split_cv_and_changes(strip_fences(raw_response))
+                    st.session_state.cl_pending_response = document
+                    st.session_state.cl_pending_change_note = change_note
+                    st.session_state.cl_refine_count += 1
+                    success = True
+                except Exception as e:
+                    st.error(tr("refine_error").format(error=e))
+            if success:
+                st.rerun(scope="fragment")
 
 
 # ─── LLM config — loaded from Streamlit secrets or .env (not exposed to users) ─
@@ -313,6 +500,11 @@ def _load_config() -> tuple[str, str, str]:
 
 
 _provider, _api_key, _model = _load_config()
+
+
+def _quota_caption_text() -> str:
+    base = tr("quota_remaining_caption").format(remaining=_remaining_calls(), max=MAX_AI_CALLS_PER_SESSION)
+    return f"{base} · {_model}"
 
 
 # ─── Main layout ──────────────────────────────────────────────────────────────
@@ -415,7 +607,7 @@ with tab_input:
         disabled=_quota_exhausted(),
     )
     quota_caption = st.empty()
-    quota_caption.caption(tr("quota_remaining_caption").format(remaining=_remaining_calls(), max=MAX_AI_CALLS_PER_SESSION))
+    quota_caption.caption(_quota_caption_text())
     if _quota_exhausted():
         st.error(tr("quota_exhausted_error").format(max=MAX_AI_CALLS_PER_SESSION))
 
@@ -492,15 +684,16 @@ with tab_input:
         st.session_state.job_content = job_content
 
         # Reset refine/diff state on a fresh generation
-        st.session_state.cv_messages = []
-        st.session_state.cl_messages = []
         st.session_state.cv_pending_diff = None
+        st.session_state.cv_pending_change_note = None
         st.session_state.cv_diff_round = 0
         st.session_state.cl_pending_response = None
+        st.session_state.cl_pending_change_note = None
+        st.session_state.cl_refine_count = 0
 
         prompt_builder = PromptBuilder(language=output_language)
         st.session_state.ai_calls_used += 1
-        quota_caption.caption(tr("quota_remaining_caption").format(remaining=_remaining_calls(), max=MAX_AI_CALLS_PER_SESSION))
+        quota_caption.caption(_quota_caption_text())
 
         # ── Generate
         progress = st.progress(0, text=tr("progress_starting"))
@@ -595,217 +788,20 @@ with tab_results:
             )
 
         st.session_state.style_config = style
+        st.caption(tr("results_style_live_note"))
 
         st.divider()
-        st.markdown(tr("style_preview_heading"))
-        preview_doc = st.radio(
-            tr("style_preview_doc_label"),
-            [tr("style_preview_doc_cv"), tr("style_preview_doc_letter")],
-            horizontal=True,
-            key="preview_doc_choice",
-        )
-        if preview_doc == tr("style_preview_doc_cv"):
-            preview_source = st.session_state.current_cv or SAMPLE_CV_PREVIEW
-        else:
-            preview_source = st.session_state.current_cl or SAMPLE_LETTER_PREVIEW
-
-        if not st.session_state.current_cv:
-            st.caption(tr("style_preview_sample_caption"))
-
-        st.markdown(render_preview_html(preview_source, style), unsafe_allow_html=True)
-
-        st.divider()
-
-        if st.session_state.show_accept_warning_once:
-            st.warning(tr("diff_irreversible_warning"))
-            st.session_state.show_accept_warning_once = False
-
-        exporter = DOCXExporter()
-        pdf_exporter = PDFExporter()
 
         cv_subtab, cl_subtab = st.tabs([tr("results_subtab_cv"), tr("results_subtab_letter")])
 
-        # ── CV sub-tab ─────────────────────────────────────────────────────────
         with cv_subtab:
-            st.subheader(tr("results_cv_heading"))
-            st.markdown(st.session_state.current_cv)
+            _render_cv_subtab(style)
 
-            col1, col2 = st.columns(2)
-            with col1:
-                try:
-                    cv_docx = exporter.cv_to_docx(st.session_state.current_cv, style=style)
-                    st.download_button(tr("dl_cv_docx"), data=cv_docx, file_name="Optimized_CV.docx", mime=DOCX_MIME, key="dl_cv_docx_btn")
-                except Exception as e:
-                    st.warning(tr("export_unavailable").format(error=e))
-                    cv_docx = None
-            with col2:
-                try:
-                    cv_pdf = pdf_exporter.cv_to_pdf(st.session_state.current_cv, style=style)
-                    st.download_button(tr("dl_cv_pdf"), data=cv_pdf, file_name="Optimized_CV.pdf", mime=PDF_MIME, key="dl_cv_pdf_btn")
-                except Exception as e:
-                    st.warning(tr("export_unavailable").format(error=e))
-                    cv_pdf = None
-
-            st.divider()
-            st.subheader(tr("results_changes_heading"))
-            st.markdown(
-                f'<div class="result-box">{st.session_state.changes}</div>',
-                unsafe_allow_html=True,
-            )
-
-            st.divider()
-            # Default open once the user has started refining (chat history or a
-            # pending diff exists) — otherwise st.rerun() after Accept/Ignore would
-            # snap this back closed on every interaction.
-            cv_expanded = bool(st.session_state.cv_messages or st.session_state.cv_pending_diff)
-            with st.expander(tr("refine_cv_expander_title"), expanded=cv_expanded):
-                st.caption(tr("refine_chat_examples"))
-
-                for msg in st.session_state.cv_messages:
-                    with st.chat_message(msg["role"]):
-                        st.markdown(msg["content"])
-
-                quota_exhausted = _quota_exhausted()
-                placeholder = tr("refine_quota_placeholder") if quota_exhausted else tr("refine_chat_placeholder")
-                if quota_exhausted:
-                    st.error(tr("quota_exhausted_error").format(max=MAX_AI_CALLS_PER_SESSION))
-
-                if cv_instruction := st.chat_input(placeholder, disabled=quota_exhausted, key="cv_chat_input"):
-                    st.session_state.cv_messages.append({"role": "user", "content": cv_instruction})
-                    with st.chat_message("user"):
-                        st.markdown(cv_instruction)
-                    with st.chat_message("assistant"):
-                        with st.spinner(tr("refine_processing")):
-                            pb = PromptBuilder(language=st.session_state.language)
-                            st.session_state.ai_calls_used += 1
-                            try:
-                                raw_response = st.session_state.llm.generate(
-                                    system="You are an expert CV writer. Apply the user's instructions precisely.",
-                                    user=pb.refine(st.session_state.current_cv, cv_instruction),
-                                    max_tokens=3000,
-                                )
-                                # Separate the document itself from the trailing "Changes made"
-                                # note so that note never becomes part of the diffable CV content.
-                                document, change_note = _split_cv_and_changes(strip_fences(raw_response))
-                                st.markdown(document)
-                                if change_note:
-                                    st.caption(change_note)
-                                st.session_state.cv_messages.append({"role": "assistant", "content": document})
-
-                                st.session_state.cv_diff_round += 1
-                                st.session_state.cv_pending_diff = compute_diff(
-                                    st.session_state.current_cv,
-                                    document,
-                                    round_id=str(st.session_state.cv_diff_round),
-                                )
-                            except Exception as e:
-                                error_msg = tr("refine_error").format(error=e)
-                                st.error(error_msg)
-                                st.session_state.cv_messages.append({"role": "assistant", "content": error_msg})
-
-                if st.session_state.cv_pending_diff:
-                    _render_diff_view(st.session_state.cv_pending_diff)
-
-                st.divider()
-                st.markdown(tr("diff_download_current_version"))
-                col3, col4 = st.columns(2)
-                with col3:
-                    try:
-                        cur_docx = exporter.cv_to_docx(st.session_state.current_cv, style=style)
-                        st.download_button(tr("dl_cv_current_docx"), data=cur_docx, file_name="Refined_CV.docx", mime=DOCX_MIME, key="dl_cv_current_docx_btn")
-                    except Exception:
-                        pass
-                with col4:
-                    try:
-                        cur_pdf = pdf_exporter.cv_to_pdf(st.session_state.current_cv, style=style)
-                        st.download_button(tr("dl_cv_current_pdf"), data=cur_pdf, file_name="Refined_CV.pdf", mime=PDF_MIME, key="dl_cv_current_pdf_btn")
-                    except Exception:
-                        pass
-
-        # ── Cover Letter sub-tab ────────────────────────────────────────────────
         with cl_subtab:
-            st.subheader(tr("results_letter_heading"))
-            st.markdown(st.session_state.current_cl)
-
-            col5, col6 = st.columns(2)
-            with col5:
-                try:
-                    cl_docx = exporter.cover_letter_to_docx(st.session_state.current_cl, style=style)
-                    st.download_button(tr("dl_letter_docx"), data=cl_docx, file_name="Cover_Letter.docx", mime=DOCX_MIME, key="dl_letter_docx_btn")
-                except Exception as e:
-                    st.warning(tr("export_unavailable").format(error=e))
-                    cl_docx = None
-            with col6:
-                try:
-                    cl_pdf = pdf_exporter.cover_letter_to_pdf(st.session_state.current_cl, style=style)
-                    st.download_button(tr("dl_letter_pdf"), data=cl_pdf, file_name="Cover_Letter.pdf", mime=PDF_MIME, key="dl_letter_pdf_btn")
-                except Exception as e:
-                    st.warning(tr("export_unavailable").format(error=e))
-
-            st.divider()
-            cl_expanded = bool(st.session_state.cl_messages or st.session_state.cl_pending_response)
-            with st.expander(tr("refine_letter_expander_title"), expanded=cl_expanded):
-                for msg in st.session_state.cl_messages:
-                    with st.chat_message(msg["role"]):
-                        st.markdown(msg["content"])
-
-                quota_exhausted = _quota_exhausted()
-                placeholder = tr("refine_quota_placeholder") if quota_exhausted else tr("refine_chat_placeholder")
-                if quota_exhausted:
-                    st.error(tr("quota_exhausted_error").format(max=MAX_AI_CALLS_PER_SESSION))
-
-                if cl_instruction := st.chat_input(placeholder, disabled=quota_exhausted, key="cl_chat_input"):
-                    st.session_state.cl_messages.append({"role": "user", "content": cl_instruction})
-                    with st.chat_message("user"):
-                        st.markdown(cl_instruction)
-                    with st.chat_message("assistant"):
-                        with st.spinner(tr("refine_processing")):
-                            pb = PromptBuilder(language=st.session_state.language)
-                            st.session_state.ai_calls_used += 1
-                            try:
-                                raw_response = st.session_state.llm.generate(
-                                    system="You are an expert at writing compelling cover letters. Apply the user's instructions precisely.",
-                                    user=pb.refine(st.session_state.current_cl, cl_instruction),
-                                    max_tokens=2000,
-                                )
-                                # Separate the letter itself from the trailing "Changes made"
-                                # note so that note never becomes part of the letter content.
-                                document, change_note = _split_cv_and_changes(strip_fences(raw_response))
-                                st.markdown(document)
-                                if change_note:
-                                    st.caption(change_note)
-                                st.session_state.cl_messages.append({"role": "assistant", "content": document})
-                                st.session_state.cl_pending_response = document
-                            except Exception as e:
-                                error_msg = tr("refine_error").format(error=e)
-                                st.error(error_msg)
-                                st.session_state.cl_messages.append({"role": "assistant", "content": error_msg})
-
-                if st.session_state.cl_pending_response:
-                    st.markdown(tr("letter_refined_heading"))
-                    st.markdown(st.session_state.cl_pending_response)
-
-                    if st.button(tr("letter_replace_btn"), key="replace_letter_btn"):
-                        _maybe_show_accept_warning()
-                        st.session_state.current_cl = st.session_state.cl_pending_response
-                        st.session_state.cl_pending_response = None
-                        st.rerun()
-
-                    col7, col8 = st.columns(2)
-                    with col7:
-                        try:
-                            pending_docx = exporter.cover_letter_to_docx(st.session_state.cl_pending_response, style=style)
-                            st.download_button(tr("dl_letter_docx"), data=pending_docx, file_name="Refined_Cover_Letter.docx", mime=DOCX_MIME, key="dl_cl_pending_docx_btn")
-                        except Exception:
-                            pass
-                    with col8:
-                        try:
-                            pending_pdf = pdf_exporter.cover_letter_to_pdf(st.session_state.cl_pending_response, style=style)
-                            st.download_button(tr("dl_letter_pdf"), data=pending_pdf, file_name="Refined_Cover_Letter.pdf", mime=PDF_MIME, key="dl_cl_pending_pdf_btn")
-                        except Exception:
-                            pass
+            _render_cl_subtab(style)
 
         # ── Bundle download (both current documents) ───────────────────────────
+        exporter = DOCXExporter()
         st.divider()
         try:
             zip_cv = exporter.cv_to_docx(st.session_state.current_cv, style=style)

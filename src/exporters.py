@@ -11,7 +11,17 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
-from .styles import StyleConfig, DEFAULT_STYLE
+from .styles import (
+    StyleConfig,
+    DEFAULT_STYLE,
+    CV_MARGINS_IN,
+    LETTER_MARGINS_IN,
+    PAGE_WIDTH_IN,
+    PAGE_HEIGHT_IN,
+    FONT_SIZE_BODY_PT,
+    FONT_SIZE_SECTION_PT,
+    FONT_SIZE_TITLE_PT,
+)
 
 
 class DOCXExporter:
@@ -21,9 +31,12 @@ class DOCXExporter:
     Design decisions:
     - Clean, minimal styling suitable for HR/corporate contexts
     - ATS-safe: no tables, no text boxes, no headers/footers with content
-    - Margins set per document type (CV slightly narrower, letter wider)
+    - A4 page, margins set per document type (CV slightly narrower, letter wider)
     - Colors and font come from a StyleConfig (see styles.py), defaulting
-      to the original look if none is provided
+      to the original look if none is provided. Font is set explicitly on
+      every run (not just the "Normal" style) so headings — which use their
+      own "Heading N" style with its own default font — actually pick up
+      the chosen font too.
     """
 
     # ── Public ────────────────────────────────────────────────────────────────
@@ -40,8 +53,9 @@ class DOCXExporter:
             bytes: DOCX file content ready for st.download_button
         """
         doc = Document()
-        self._set_margins(doc, top=0.8, bottom=0.8, left=1.0, right=1.0)
-        self._set_default_font(doc, font_name=style.font, font_size=11)
+        self._set_page_size(doc)
+        self._set_margins(doc, **CV_MARGINS_IN)
+        self._set_default_font(doc, font_name=style.font, font_size=FONT_SIZE_BODY_PT)
         self._parse_markdown(doc, markdown_text, style)
         return self._to_bytes(doc)
 
@@ -57,8 +71,9 @@ class DOCXExporter:
             bytes: DOCX file content ready for st.download_button
         """
         doc = Document()
-        self._set_margins(doc, top=1.0, bottom=1.0, left=1.2, right=1.2)
-        self._set_default_font(doc, font_name=style.font, font_size=11)
+        self._set_page_size(doc)
+        self._set_margins(doc, **LETTER_MARGINS_IN)
+        self._set_default_font(doc, font_name=style.font, font_size=FONT_SIZE_BODY_PT)
         self._parse_markdown(doc, markdown_text, style)
         return self._to_bytes(doc)
 
@@ -96,7 +111,8 @@ class DOCXExporter:
                 p = doc.add_heading(level=1)
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 run = p.add_run(content)
-                run.font.size = Pt(18)
+                run.font.name = style.font
+                run.font.size = Pt(FONT_SIZE_TITLE_PT)
                 run.font.color.rgb = heading_rgb
                 continue
 
@@ -107,7 +123,8 @@ class DOCXExporter:
                     content = content.upper()
                 p = doc.add_heading(level=2)
                 run = p.add_run(content)
-                run.font.size = Pt(11)
+                run.font.name = style.font
+                run.font.size = Pt(FONT_SIZE_SECTION_PT)
                 run.font.color.rgb = heading_rgb
                 run.bold = True
                 if style.heading_border:
@@ -119,7 +136,8 @@ class DOCXExporter:
                 content = stripped[4:].strip()
                 p = doc.add_heading(level=3)
                 run = p.add_run(content)
-                run.font.size = Pt(11)
+                run.font.name = style.font
+                run.font.size = Pt(FONT_SIZE_SECTION_PT)
                 run.font.color.rgb = heading_rgb
                 run.bold = True
                 continue
@@ -153,8 +171,8 @@ class DOCXExporter:
     def _add_inline_formatting(self, paragraph, text: str, style: StyleConfig):
         """
         Parse **bold**, *italic*, and ***bold-italic*** inline markers
-        and add formatted runs to the paragraph, colored with the main
-        body text color from the style.
+        and add formatted runs to the paragraph, colored and fonted with
+        the main body text settings from the style.
         """
         text_rgb = RGBColor.from_string(style.text_color.lstrip("#"))
 
@@ -175,9 +193,17 @@ class DOCXExporter:
                 run.italic = True
             else:
                 run = paragraph.add_run(part)
+            run.font.name = style.font
+            run.font.size = Pt(FONT_SIZE_BODY_PT)
             run.font.color.rgb = text_rgb
 
     # ── Document styling helpers ──────────────────────────────────────────────
+
+    def _set_page_size(self, doc: Document):
+        """Set A4 page size (python-docx defaults to US Letter)."""
+        for section in doc.sections:
+            section.page_width = Inches(PAGE_WIDTH_IN)
+            section.page_height = Inches(PAGE_HEIGHT_IN)
 
     def _set_margins(
         self,

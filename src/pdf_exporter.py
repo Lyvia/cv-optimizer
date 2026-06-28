@@ -8,7 +8,15 @@ import re
 
 from fpdf import FPDF
 
-from .styles import StyleConfig, DEFAULT_STYLE
+from .styles import (
+    StyleConfig,
+    DEFAULT_STYLE,
+    CV_MARGINS_IN,
+    LETTER_MARGINS_IN,
+    FONT_SIZE_BODY_PT,
+    FONT_SIZE_SECTION_PT,
+    FONT_SIZE_TITLE_PT,
+)
 
 # fpdf2 only ships core fonts (Helvetica, Times, Courier) — map our
 # Word-oriented font choices to the closest built-in equivalent.
@@ -19,7 +27,7 @@ _FONT_MAP = {
     "Garamond": "Times",
 }
 
-_LINE_H = 0.22  # inches, body text line height
+_LINE_H = FONT_SIZE_BODY_PT / 72 * 1.4  # inches, scaled to the body font size
 _INLINE_PATTERN = re.compile(r"(\*{3}.+?\*{3}|\*{2}.+?\*{2}|\*.+?\*)")
 
 # fpdf2's core fonts (Helvetica/Times) only support latin-1. LLM output
@@ -59,13 +67,13 @@ class PDFExporter:
 
     def cv_to_pdf(self, markdown_text: str, style: StyleConfig = DEFAULT_STYLE) -> bytes:
         """Convert an optimized CV (markdown) to a PDF byte string."""
-        pdf = self._new_pdf(style, top=0.8, bottom=0.8, left=1.0, right=1.0)
+        pdf = self._new_pdf(style, **CV_MARGINS_IN)
         self._render_markdown(pdf, markdown_text, style)
         return bytes(pdf.output())
 
     def cover_letter_to_pdf(self, markdown_text: str, style: StyleConfig = DEFAULT_STYLE) -> bytes:
         """Convert a cover letter (markdown) to a PDF byte string."""
-        pdf = self._new_pdf(style, top=1.0, bottom=1.0, left=1.2, right=1.2)
+        pdf = self._new_pdf(style, **LETTER_MARGINS_IN)
         self._render_markdown(pdf, markdown_text, style)
         return bytes(pdf.output())
 
@@ -76,7 +84,7 @@ class PDFExporter:
         pdf.set_margins(left, top, right)
         pdf.set_auto_page_break(auto=True, margin=bottom)
         pdf.add_page()
-        pdf.set_font(_FONT_MAP.get(style.font, "Helvetica"), size=11)
+        pdf.set_font(_FONT_MAP.get(style.font, "Helvetica"), size=FONT_SIZE_BODY_PT)
         return pdf
 
     # ── Markdown rendering ───────────────────────────────────────────────────────
@@ -96,7 +104,7 @@ class PDFExporter:
 
             if stripped.startswith("# ") and not stripped.startswith("## "):
                 content = stripped[2:].strip()
-                pdf.set_font(font, "B", 18)
+                pdf.set_font(font, "B", FONT_SIZE_TITLE_PT)
                 pdf.set_text_color(*heading_rgb)
                 pdf.cell(0, _LINE_H * 1.3, text=content, align="C", new_x="LMARGIN", new_y="NEXT")
                 pdf.ln(_LINE_H * 0.3)
@@ -106,7 +114,7 @@ class PDFExporter:
                 content = stripped[3:].strip()
                 if style.heading_uppercase:
                     content = content.upper()
-                pdf.set_font(font, "B", 12)
+                pdf.set_font(font, "B", FONT_SIZE_SECTION_PT)
                 pdf.set_text_color(*heading_rgb)
                 pdf.cell(0, _LINE_H * 1.1, text=content, new_x="LMARGIN", new_y="NEXT")
                 if style.heading_border:
@@ -118,7 +126,7 @@ class PDFExporter:
 
             if stripped.startswith("### "):
                 content = stripped[4:].strip()
-                pdf.set_font(font, "B", 11)
+                pdf.set_font(font, "B", FONT_SIZE_SECTION_PT)
                 pdf.set_text_color(*heading_rgb)
                 pdf.cell(0, _LINE_H, text=content, new_x="LMARGIN", new_y="NEXT")
                 continue
@@ -157,16 +165,16 @@ class PDFExporter:
             if not part:
                 continue
             if part.startswith("***") and part.endswith("***"):
-                pdf.set_font(font, "BI", 11)
+                pdf.set_font(font, "BI", FONT_SIZE_BODY_PT)
                 pdf.write(_LINE_H, part[3:-3])
             elif part.startswith("**") and part.endswith("**"):
-                pdf.set_font(font, "B", 11)
+                pdf.set_font(font, "B", FONT_SIZE_BODY_PT)
                 pdf.write(_LINE_H, part[2:-2])
             elif part.startswith("*") and part.endswith("*") and len(part) > 2:
-                pdf.set_font(font, "I", 11)
+                pdf.set_font(font, "I", FONT_SIZE_BODY_PT)
                 pdf.write(_LINE_H, part[1:-1])
             else:
-                pdf.set_font(font, "", 11)
+                pdf.set_font(font, "", FONT_SIZE_BODY_PT)
                 pdf.write(_LINE_H, part)
 
         pdf.ln(_LINE_H)

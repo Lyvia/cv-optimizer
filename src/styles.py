@@ -51,3 +51,16 @@ TEMPLATES: dict[str, StyleConfig] = {
 }
 
 DEFAULT_STYLE = TEMPLATES["Classic Blue"]
+
+
+# ── Page layout (shared by exporters.py, pdf_exporter.py, and the one-page
+# prompt budget in prompts.py — keep all three in sync with these values) ──
+PAGE_WIDTH_IN = 8.27   # A4
+PAGE_HEIGHT_IN = 11.69  # A4
+
+CV_MARGINS_IN = {"top": 0.5, "bottom": 0.5, "left": 0.7, "right": 0.7}
+LETTER_MARGINS_IN = {"top": 0.6, "bottom": 0.6, "left": 0.8, "right": 0.8}
+
+FONT_SIZE_BODY_PT = 10
+FONT_SIZE_SECTION_PT = 11
+FONT_SIZE_TITLE_PT = 14

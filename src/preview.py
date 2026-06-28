@@ -9,7 +9,7 @@ template/color/font choice will look without ever calling the LLM.
 import html
 import re
 
-from .styles import StyleConfig
+from .styles import StyleConfig, FONT_SIZE_BODY_PT, FONT_SIZE_SECTION_PT, FONT_SIZE_TITLE_PT
 
 SAMPLE_CV_PREVIEW = """# John Doe
 john.doe@email.com | linkedin.com/in/johndoe | Paris
@@ -60,11 +60,20 @@ def render_preview_html(markdown_text: str, style: StyleConfig) -> str:
     """
     body_html = _markdown_to_html(markdown_text, style)
 
+    # Streamlit's markdown sanitizer strips `font-family` from inline
+    # style="" attributes (color/size/border survive, font-family doesn't) —
+    # a real <style> block is not filtered the same way, so the font has
+    # to be set there instead of inline like the other properties below.
     return f"""
-<div style="
+<style>
+.cvopt-preview, .cvopt-preview * {{
+    font-family: "{style.font}", sans-serif !important;
+}}
+</style>
+<div class="cvopt-preview" style="
     background: #ffffff;
     color: {style.text_color};
-    font-family: '{style.font}', sans-serif;
+    font-size: {FONT_SIZE_BODY_PT}pt;
     padding: 28px 32px;
     border: 1px solid #ddd;
     border-radius: 6px;
@@ -100,7 +109,7 @@ def _markdown_to_html(text: str, style: StyleConfig) -> str:
             content = _inline(line[2:].strip())
             out.append(
                 f"<h1 style='color:{style.heading_color}; text-align:center; "
-                f"font-size:1.4em; margin-bottom:0.3em;'>{content}</h1>"
+                f"font-size:{FONT_SIZE_TITLE_PT}pt; margin-bottom:0.3em;'>{content}</h1>"
             )
             continue
 
@@ -111,7 +120,7 @@ def _markdown_to_html(text: str, style: StyleConfig) -> str:
             border = f"border-bottom:1px solid {style.accent_color}; padding-bottom:2px; " if style.heading_border else ""
             out.append(
                 f"<h2 style='color:{style.heading_color}; text-transform:{text_transform}; "
-                f"font-size:1.0em; {border}margin-top:1em;'>{content}</h2>"
+                f"font-size:{FONT_SIZE_SECTION_PT}pt; {border}margin-top:1em;'>{content}</h2>"
             )
             continue
 
@@ -119,8 +128,9 @@ def _markdown_to_html(text: str, style: StyleConfig) -> str:
             close_list()
             content = _inline(line[4:].strip())
             out.append(
-                f"<h3 style='color:{style.heading_color}; font-size:0.95em; "
-                f"margin-top:0.8em;'>{content}</h3>"
+                f"<h3 style='color:{style.heading_color}; "
+                f"font-size:{FONT_SIZE_SECTION_PT}pt; "
+                f"font-weight:bold; margin-top:0.8em;'>{content}</h3>"
             )
             continue
 

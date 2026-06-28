@@ -21,7 +21,7 @@ PROVIDERS: dict[str, dict] = {
     "Google (Gemini)": {
         "models": [
             "gemini-2.5-flash",             # free tier, fast
-            "gemini-2.0-flash",             # free tier, older
+            "gemini-2.5-flash-lite",        # free tier, more generous quota
             "gemini-2.5-pro",               # paid, high quality
         ],
         "cost_info": "Flash models have a free tier (rate-limited). Pro is paid.",
@@ -129,38 +129,60 @@ class LLMClient:
 
     # ── Private: Google Gemini ────────────────────────────────────────────────
 
+    _GEMINI_FALLBACK_MODEL = "gemini-2.5-flash-lite"
+
     def _gemini(self, system: str, user: str, max_tokens: int) -> str:
         try:
             import google.generativeai as genai
         except ImportError:
             raise ImportError("Run: pip install google-generativeai")
 
-        try:
-            genai.configure(api_key=self.api_key)
-            model = genai.GenerativeModel(
-                model_name=self.model,
-                system_instruction=system,
-            )
-            response = model.generate_content(
-                user,
-                generation_config=genai.types.GenerationConfig(
-                    max_output_tokens=max_tokens,
-                    temperature=0.7,
-                ),
-            )
-            return response.text
-        except Exception as e:
-            err = str(e).lower()
-            if "api_key" in err or "invalid" in err or "403" in err:
-                raise RuntimeError(
-                    "Invalid Google API key. "
-                    "Generate one at https://aistudio.google.com/app/apikey"
+        genai.configure(api_key=self.api_key)
+
+        # Try the configured model first, then fall back to a more generous
+        # free-tier model on quota errors only (auth/other errors won't be
+        # fixed by switching models, so they fail fast instead).
+        models_to_try = [self.model]
+        if self.model != self._GEMINI_FALLBACK_MODEL:
+            models_to_try.append(self._GEMINI_FALLBACK_MODEL)
+
+        last_error: Exception | None = None
+        for attempt, model_name in enumerate(models_to_try):
+            try:
+                model = genai.GenerativeModel(
+                    model_name=model_name,
+                    system_instruction=system,
                 )
-            if "quota" in err or "429" in err:
-                raise RuntimeError(
-                    "Gemini quota exceeded. Wait 1 minute (free tier: 15 req/min)."
+                response = model.generate_content(
+                    user,
+                    generation_config=genai.types.GenerationConfig(
+                        max_output_tokens=max_tokens,
+                        temperature=0.7,
+                    ),
                 )
-            raise RuntimeError(f"Gemini API error: {e}")
+                return response.text
+            except Exception as e:
+                last_error = e
+                err = str(e).lower()
+                is_quota_error = "429" in err or "quota" in err or "resource exhausted" in err
+                is_last_attempt = attempt == len(models_to_try) - 1
+                if is_quota_error and not is_last_attempt:
+                    continue
+                break
+
+        err = str(last_error).lower()
+        if "api_key" in err or "invalid" in err or "403" in err:
+            raise RuntimeError(
+                "Invalid Google API key. "
+                "Generate one at https://aistudio.google.com/app/apikey"
+            )
+        if "429" in err or "quota" in err or "resource exhausted" in err:
+            tried = ", ".join(models_to_try)
+            raise RuntimeError(
+                f"Gemini quota exceeded on all available models ({tried}). "
+                "Wait a few minutes and try again, or check https://ai.dev/rate-limit."
+            )
+        raise RuntimeError(f"Gemini API error: {last_error}")
 
     # ── Private: Groq ─────────────────────────────────────────────────────────
 
