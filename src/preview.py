@@ -117,7 +117,16 @@ def _markdown_to_html(text: str, style: StyleConfig) -> str:
             close_list()
             content = _inline(line[3:].strip())
             text_transform = "uppercase" if style.heading_uppercase else "none"
-            border = f"border-bottom:1px solid {style.accent_color}; padding-bottom:2px; " if style.heading_border else ""
+            # Always declare border-bottom/padding-bottom explicitly (never omit
+            # the property) — app.py has a page-wide `h2 { border-bottom: ...; }`
+            # rule for the app's own headings, and an inline style only wins over
+            # it for properties it actually declares. Omitting the property here
+            # let that page-wide border leak into no-border styles (CVO-12).
+            border = (
+                f"border-bottom:1px solid {style.accent_color}; padding-bottom:2px; "
+                if style.heading_border
+                else "border-bottom:none; padding-bottom:0; "
+            )
             out.append(
                 f"<h2 style='color:{style.heading_color}; text-transform:{text_transform}; "
                 f"font-size:{FONT_SIZE_SECTION_PT}pt; {border}margin-top:1em;'>{content}</h2>"

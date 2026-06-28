@@ -792,6 +792,8 @@ with tab_results:
                 heading_color=heading_color,
                 accent_color=heading_color,
                 font=font,
+                heading_uppercase=base.heading_uppercase,
+                heading_border=base.heading_border,
             )
 
         st.session_state.style_config = style
