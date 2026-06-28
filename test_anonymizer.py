@@ -85,6 +85,35 @@ def run_test(text: str):
         print("  ⚠️  Nothing was replaced — check that the text contains personal data.")
 
 
+# ─── Automated regression tests (pytest test_anonymizer.py -v) ────────────────
+
+def test_iso_standard_number_not_redacted_as_postal_code():
+    """CVO-11: "ISO 27001" must not be wrongly treated as a postal code."""
+    result = anonymize("ISO 27001 certified company")
+    assert "ISO 27001" in result.anonymized_text
+    assert not any("27001" in v for v in result.replacements.values())
+
+
+def test_other_iso_standard_numbers_not_redacted():
+    result = anonymize("Certified ISO 14001 and ISO 9001:2015")
+    assert "ISO 14001" in result.anonymized_text
+    assert "ISO 9001" in result.anonymized_text
+
+
+def test_real_postal_code_with_city_still_redacted():
+    """Postal code + city (the documented, intended case) must still be caught."""
+    result = anonymize("123 Main Street, 75011 Paris")
+    assert "75011 Paris" not in result.anonymized_text
+    assert any("75011 Paris" in v for v in result.replacements.values())
+
+
+def test_bare_five_digit_number_without_city_not_redacted():
+    """A standalone 5-digit number with nothing capitalized after it is not
+    a postal code on its own (module docstring: "city + zip code")."""
+    result = anonymize("Budget: 75011 dollars allocated")
+    assert "75011" in result.anonymized_text
+
+
 if __name__ == "__main__":
     # If a file is passed as an argument, use it
     if len(sys.argv) > 1:

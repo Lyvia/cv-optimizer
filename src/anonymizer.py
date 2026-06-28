@@ -111,7 +111,16 @@ def anonymize(text: str) -> AnonymizationResult:
         summary.append("Personal URL")
 
     # ── 6. French postal codes + city ─────────────────────────────────────────
-    postal = re.findall(r'\b\d{5}\b(?:\s+[A-ZÀ-Ÿ][a-zA-ZÀ-ÿ\-\s]{2,30})?', result)
+    # City name is required (not optional): a bare 5-digit number with nothing
+    # following it is not a postal code on its own (see module docstring:
+    # "city + zip code") -- this also excludes standard numbers like
+    # "ISO 27001 certified", since "certified" isn't a capitalized city name.
+    # The "ISO" lookbehind is a second guard for the rarer case of a
+    # capitalized word right after (e.g. "ISO 27001 Standard").
+    postal = re.findall(
+        r'(?<![Ii][Ss][Oo]\s)\b\d{5}\b\s+[A-ZÀ-Ÿ][a-zA-ZÀ-ÿ\-\s]{2,30}',
+        result
+    )
     for i, addr in enumerate(dict.fromkeys(postal)):
         placeholder = f"[ADDRESS_{i + 1}]"
         replacements[placeholder] = addr
