@@ -131,13 +131,29 @@ class LLMClient:
 
     _GEMINI_FALLBACK_MODEL = "gemini-2.5-flash-lite"
 
+    @staticmethod
+    def _gemini_thinking_budget(model_name: str) -> int:
+        """0 fully disables "thinking" (supported by flash / flash-lite —
+        this is what was silently eating the max_output_tokens budget and
+        truncating responses). gemini-2.5-pro requires a minimum non-zero
+        budget and can't have thinking disabled outright."""
+        return 128 if "pro" in model_name else 0
+
+    @staticmethod
+    def _gemini_error_code(e: Exception) -> int | None:
+        """google.genai.errors.APIError exposes a structured .code (HTTP
+        status); fall back to None for anything else so callers can still
+        use string matching as a second line of defense."""
+        return getattr(e, "code", None)
+
     def _gemini(self, system: str, user: str, max_tokens: int) -> str:
         try:
-            import google.generativeai as genai
+            from google import genai
+            from google.genai import types
         except ImportError:
-            raise ImportError("Run: pip install google-generativeai")
+            raise ImportError("Run: pip install google-genai")
 
-        genai.configure(api_key=self.api_key)
+        client = genai.Client(api_key=self.api_key)
 
         # Try the configured model first, then fall back to a more generous
         # free-tier model on quota errors only (auth/other errors won't be
@@ -149,34 +165,37 @@ class LLMClient:
         last_error: Exception | None = None
         for attempt, model_name in enumerate(models_to_try):
             try:
-                model = genai.GenerativeModel(
-                    model_name=model_name,
-                    system_instruction=system,
-                )
-                response = model.generate_content(
-                    user,
-                    generation_config=genai.types.GenerationConfig(
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=user,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system,
                         max_output_tokens=max_tokens,
                         temperature=0.7,
+                        thinking_config=types.ThinkingConfig(
+                            thinking_budget=self._gemini_thinking_budget(model_name),
+                        ),
                     ),
                 )
                 return response.text
             except Exception as e:
                 last_error = e
+                code = self._gemini_error_code(e)
                 err = str(e).lower()
-                is_quota_error = "429" in err or "quota" in err or "resource exhausted" in err
+                is_quota_error = code == 429 or "429" in err or "quota" in err or "resource exhausted" in err
                 is_last_attempt = attempt == len(models_to_try) - 1
                 if is_quota_error and not is_last_attempt:
                     continue
                 break
 
+        code = self._gemini_error_code(last_error)
         err = str(last_error).lower()
-        if "api_key" in err or "invalid" in err or "403" in err:
+        if code in (401, 403) or "api_key" in err or "invalid" in err or "403" in err:
             raise RuntimeError(
                 "Invalid Google API key. "
                 "Generate one at https://aistudio.google.com/app/apikey"
             )
-        if "429" in err or "quota" in err or "resource exhausted" in err:
+        if code == 429 or "429" in err or "quota" in err or "resource exhausted" in err:
             tried = ", ".join(models_to_try)
             raise RuntimeError(
                 f"Gemini quota exceeded on all available models ({tried}). "

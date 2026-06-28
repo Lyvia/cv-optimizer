@@ -6,10 +6,11 @@ CSS custom injecté via `src/styles.py` → `st.markdown(unsafe_allow_html=True)
 
 ## Commandes
 ```
-streamlit run app.py              # démarrer l'app
-pip install -r requirements.txt   # installer les dépendances
-python -m pytest test_anonymizer.py -v  # lancer les tests
-docker build -t cv-optimizer .    # build Docker
+streamlit run app.py                  # démarrer l'app
+pip install -r requirements.txt       # installer les dépendances
+pip install -r requirements-dev.txt   # + pytest pour lancer les tests
+python -m pytest -v                   # lancer tous les tests (test_*.py)
+docker build -t cv-optimizer .        # build Docker
 ```
 
 ## Structure

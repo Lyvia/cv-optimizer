@@ -126,9 +126,6 @@ UI: dict[Lang, dict[str, str]] = {
         "diff_irreversible_warning": (
             "⚠️ Once accepted, this cannot be undone. The accepted version becomes your new reference."
         ),
-        "diff_download_current_version": "**Download current version**",
-        "dl_cv_current_docx": "📥 Download this version (.docx)",
-        "dl_cv_current_pdf": "📥 Download this version (.pdf)",
         "results_letter_heading": "📝 Cover letter",
         "dl_letter_docx": "📥 Download letter (.docx)",
         "dl_letter_pdf": "📥 Download letter (.pdf)",
@@ -254,9 +251,6 @@ UI: dict[Lang, dict[str, str]] = {
         "diff_irreversible_warning": (
             "⚠️ Une fois accepté, ceci est irréversible. La version acceptée devient votre nouvelle référence."
         ),
-        "diff_download_current_version": "**Télécharger la version actuelle**",
-        "dl_cv_current_docx": "📥 Télécharger cette version (.docx)",
-        "dl_cv_current_pdf": "📥 Télécharger cette version (.pdf)",
         "results_letter_heading": "📝 Lettre de motivation",
         "dl_letter_docx": "📥 Télécharger la lettre (.docx)",
         "dl_letter_pdf": "📥 Télécharger la lettre (.pdf)",

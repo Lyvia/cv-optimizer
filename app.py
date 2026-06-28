@@ -220,25 +220,39 @@ def _render_text_block(lines: list[str], bg: str, fg: str, strike: bool = False)
 
 def _render_diff_view(chunks):
     """
-    Render only the changes still awaiting a decision — unchanged context
-    and already-resolved chunks are never (re)displayed, so the review
-    list shrinks as the user goes instead of accumulating. Once nothing
-    is left pending, the whole diff is cleared (Accept All / Ignore All
-    disappear with it). Runs inside a fragment, so every accept/ignore
-    only re-renders this fragment, not the whole page.
+    Render the CV as ONE continuous document: unchanged lines stay plain
+    (context, per CVO-5 — no separate stripped-down diff list anymore),
+    chunks still awaiting a decision are color-highlighted with inline
+    Accept/Ignore, and chunks already resolved blend back into plain text
+    reflecting that decision. This view *replaces* the static styled
+    preview while a diff is pending (there is only ever one CV view on
+    screen, never both at once — that duplication was the real source of
+    extra scrolling, not the presence of context). Once nothing is left
+    pending, the diff is cleared and the static styled view returns.
+    Runs inside a fragment, so every accept/ignore only re-renders this
+    fragment, not the whole page.
     """
     actionable = [c for c in chunks if c.type != "equal"]
     if not actionable:
         st.info(tr("diff_no_changes"))
         return
 
-    pending = [c for c in actionable if _diff_status(c.chunk_id) == "pending"]
-    if not pending:
-        st.session_state.cv_pending_diff = None
-        st.session_state.cv_pending_change_note = None
-        return
+    any_pending = False
+    for chunk in chunks:
+        if chunk.type == "equal":
+            _render_text_block(chunk.old_lines, bg="", fg="#31333F")
+            continue
 
-    for chunk in pending:
+        status = _diff_status(chunk.chunk_id)
+
+        if status == "accepted":
+            _render_text_block(chunk.new_lines, bg="", fg="#31333F")
+            continue
+        if status == "ignored":
+            _render_text_block(chunk.old_lines, bg="", fg="#31333F")
+            continue
+
+        any_pending = True
         if chunk.type == "removed":
             _render_text_block(chunk.old_lines, bg="#fde8e8", fg="#842029", strike=True)
         elif chunk.type == "added":
@@ -247,18 +261,28 @@ def _render_diff_view(chunks):
             _render_text_block(chunk.old_lines, bg="#fde8e8", fg="#842029", strike=True)
             _render_text_block(chunk.new_lines, bg="#e6f4ea", fg="#1e7e34")
 
-        bcol1, bcol2 = st.columns(2)
-        with bcol1:
-            if st.button(tr("diff_accept_btn"), key=f"accept_{chunk.chunk_id}", use_container_width=True):
-                _maybe_show_accept_warning()
-                _set_diff_status(chunk.chunk_id, "accepted")
-                st.session_state.current_cv = rebuild_text(chunks, _collect_diff_statuses(chunks))
-                st.rerun(scope="fragment")
-        with bcol2:
-            if st.button(tr("diff_ignore_btn"), key=f"ignore_{chunk.chunk_id}", use_container_width=True):
-                _set_diff_status(chunk.chunk_id, "ignored")
-                st.session_state.current_cv = rebuild_text(chunks, _collect_diff_statuses(chunks))
-                st.rerun(scope="fragment")
+        if chunk.type != "removed":
+            bcol1, bcol2 = st.columns(2)
+            with bcol1:
+                if st.button(tr("diff_accept_btn"), key=f"accept_{chunk.chunk_id}", use_container_width=True):
+                    _maybe_show_accept_warning()
+                    _set_diff_status(chunk.chunk_id, "accepted")
+                    st.session_state.current_cv = rebuild_text(chunks, _collect_diff_statuses(chunks))
+                    st.rerun(scope="fragment")
+            with bcol2:
+                if st.button(tr("diff_ignore_btn"), key=f"ignore_{chunk.chunk_id}", use_container_width=True):
+                    _set_diff_status(chunk.chunk_id, "ignored")
+                    st.session_state.current_cv = rebuild_text(chunks, _collect_diff_statuses(chunks))
+                    st.rerun(scope="fragment")
+
+    if not any_pending:
+        # Last chunk just got resolved — clear and immediately switch back
+        # to the styled static view instead of leaving this plain-text
+        # rendering on screen as the final state.
+        st.session_state.cv_pending_diff = None
+        st.session_state.cv_pending_change_note = None
+        st.rerun(scope="fragment")
+        return
 
     st.divider()
     col_a, col_b = st.columns(2)
@@ -294,7 +318,13 @@ def _render_cv_subtab(style: StyleConfig):
     pdf_exporter = PDFExporter()
 
     st.subheader(tr("results_cv_heading"))
-    st.markdown(render_preview_html(st.session_state.current_cv, style), unsafe_allow_html=True)
+
+    if st.session_state.cv_pending_diff:
+        if st.session_state.cv_pending_change_note:
+            st.caption(st.session_state.cv_pending_change_note)
+        _render_diff_view(st.session_state.cv_pending_diff)
+    else:
+        st.markdown(render_preview_html(st.session_state.current_cv, style), unsafe_allow_html=True)
 
     col1, col2 = st.columns(2)
     with col1:
@@ -322,13 +352,6 @@ def _render_cv_subtab(style: StyleConfig):
     with st.expander(tr("refine_cv_expander_title"), expanded=cv_expanded):
         st.caption(tr("refine_chat_examples"))
 
-        # Review area first — whatever is still pending from the last
-        # refinement — so the input below is reached only after reviewing.
-        if st.session_state.cv_pending_change_note:
-            st.caption(st.session_state.cv_pending_change_note)
-        if st.session_state.cv_pending_diff:
-            _render_diff_view(st.session_state.cv_pending_diff)
-
         quota_exhausted = _quota_exhausted()
         st.caption(_quota_caption_text())
         if quota_exhausted:
@@ -344,7 +367,7 @@ def _render_cv_subtab(style: StyleConfig):
                     raw_response = st.session_state.llm.generate(
                         system="You are an expert CV writer. Apply the user's instructions precisely.",
                         user=pb.refine(st.session_state.current_cv, cv_instruction),
-                        max_tokens=3000,
+                        max_tokens=8000,
                     )
                     document, change_note = _split_cv_and_changes(strip_fences(raw_response))
                     st.session_state.cv_diff_round += 1
@@ -359,22 +382,6 @@ def _render_cv_subtab(style: StyleConfig):
                     st.error(tr("refine_error").format(error=e))
             if success:
                 st.rerun(scope="fragment")
-
-        st.divider()
-        st.markdown(tr("diff_download_current_version"))
-        col3, col4 = st.columns(2)
-        with col3:
-            try:
-                cur_docx = exporter.cv_to_docx(st.session_state.current_cv, style=style)
-                st.download_button(tr("dl_cv_current_docx"), data=cur_docx, file_name="Refined_CV.docx", mime=DOCX_MIME, key="dl_cv_current_docx_btn")
-            except Exception:
-                pass
-        with col4:
-            try:
-                cur_pdf = pdf_exporter.cv_to_pdf(st.session_state.current_cv, style=style)
-                st.download_button(tr("dl_cv_current_pdf"), data=cur_pdf, file_name="Refined_CV.pdf", mime=PDF_MIME, key="dl_cv_current_pdf_btn")
-            except Exception:
-                pass
 
 
 @st.fragment
@@ -450,7 +457,7 @@ def _render_cl_subtab(style: StyleConfig):
                     raw_response = st.session_state.llm.generate(
                         system="You are an expert at writing compelling cover letters. Apply the user's instructions precisely.",
                         user=pb.refine(st.session_state.current_cl, cl_instruction),
-                        max_tokens=2000,
+                        max_tokens=3000,
                     )
                     document, change_note = _split_cv_and_changes(strip_fences(raw_response))
                     st.session_state.cl_pending_response = document
@@ -703,14 +710,14 @@ with tab_input:
             st.session_state.analysis = strip_fences(llm.generate(
                 system="You are an HR expert and ATS specialist with 15 years of experience.",
                 user=prompt_builder.analysis(cv_for_llm, job_content),
-                max_tokens=3000,
+                max_tokens=4000,
             ))
 
             progress.progress(45, text=tr("progress_optimizing"))
             raw_opt = strip_fences(llm.generate(
                 system="You are an expert CV writer and ATS specialist.",
                 user=prompt_builder.optimize_cv(cv_for_llm, job_content),
-                max_tokens=4000,
+                max_tokens=8000,
             ))
             st.session_state.optimized_cv, st.session_state.changes = _split_cv_and_changes(raw_opt)
 
@@ -718,7 +725,7 @@ with tab_input:
             st.session_state.cover_letter = strip_fences(llm.generate(
                 system="You are an expert at writing compelling cover letters.",
                 user=prompt_builder.cover_letter(cv_for_llm, job_content),
-                max_tokens=2000,
+                max_tokens=3000,
             ))
 
             st.session_state.current_cv = st.session_state.optimized_cv

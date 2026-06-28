@@ -8,7 +8,7 @@ fpdf2>=2.7.0                # PDF export
 
 # ── LLM providers (install only what you use) ─────────────────────────────────
 anthropic>=0.40.0            # Claude (Anthropic)
-google-generativeai>=0.8.0   # Gemini (Google) — free tier available
+google-genai>=1.0.0          # Gemini (Google) — free tier available
 groq>=0.11.0                 # Llama / Mixtral via Groq — free tier available
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
