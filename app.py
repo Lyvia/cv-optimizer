@@ -126,9 +126,9 @@ def _init_state():
         "cv_pending_diff": None,
         "cv_pending_change_note": None,
         "cv_diff_round": 0,
-        "cl_pending_response": None,
+        "cl_pending_diff": None,
         "cl_pending_change_note": None,
-        "cl_refine_count": 0,
+        "cl_diff_round": 0,
         "accept_warning_shown": False,
         "show_accept_warning_once": False,
     }
@@ -218,20 +218,28 @@ def _render_text_block(lines: list[str], bg: str, fg: str, strike: bool = False)
     )
 
 
-def _render_diff_view(chunks):
+def _render_diff_view(chunks, doc_key: str):
     """
-    Render the CV as ONE continuous document: unchanged lines stay plain
-    (context, per CVO-5 — no separate stripped-down diff list anymore),
+    Render a document (CV or cover letter, per CVO-3 — both use this same
+    line-by-line mechanism) as ONE continuous document: unchanged lines
+    stay plain (context, per CVO-5 — no separate stripped-down diff list),
     chunks still awaiting a decision are color-highlighted with inline
     Accept/Ignore, and chunks already resolved blend back into plain text
     reflecting that decision. This view *replaces* the static styled
-    preview while a diff is pending (there is only ever one CV view on
-    screen, never both at once — that duplication was the real source of
-    extra scrolling, not the presence of context). Once nothing is left
-    pending, the diff is cleared and the static styled view returns.
-    Runs inside a fragment, so every accept/ignore only re-renders this
-    fragment, not the whole page.
+    preview while a diff is pending (there is only ever one view on
+    screen, never both at once). Once nothing is left pending, the diff
+    is cleared and the static styled view returns. Runs inside a
+    fragment, so every accept/ignore only re-renders this fragment, not
+    the whole page.
+
+    doc_key: "cv" or "cl" — selects which session-state-backed document
+    (current_cv/current_cl, {doc_key}_pending_diff, etc.) this round acts on.
     """
+    current_attr = "current_cv" if doc_key == "cv" else "current_cl"
+    pending_diff_attr = f"{doc_key}_pending_diff"
+    pending_note_attr = f"{doc_key}_pending_change_note"
+    diff_round_attr = f"{doc_key}_diff_round"
+
     actionable = [c for c in chunks if c.type != "equal"]
     if not actionable:
         st.info(tr("diff_no_changes"))
@@ -267,41 +275,41 @@ def _render_diff_view(chunks):
                 if st.button(tr("diff_accept_btn"), key=f"accept_{chunk.chunk_id}", use_container_width=True):
                     _maybe_show_accept_warning()
                     _set_diff_status(chunk.chunk_id, "accepted")
-                    st.session_state.current_cv = rebuild_text(chunks, _collect_diff_statuses(chunks))
+                    st.session_state[current_attr] = rebuild_text(chunks, _collect_diff_statuses(chunks))
                     st.rerun(scope="fragment")
             with bcol2:
                 if st.button(tr("diff_ignore_btn"), key=f"ignore_{chunk.chunk_id}", use_container_width=True):
                     _set_diff_status(chunk.chunk_id, "ignored")
-                    st.session_state.current_cv = rebuild_text(chunks, _collect_diff_statuses(chunks))
+                    st.session_state[current_attr] = rebuild_text(chunks, _collect_diff_statuses(chunks))
                     st.rerun(scope="fragment")
 
     if not any_pending:
         # Last chunk just got resolved — clear and immediately switch back
         # to the styled static view instead of leaving this plain-text
         # rendering on screen as the final state.
-        st.session_state.cv_pending_diff = None
-        st.session_state.cv_pending_change_note = None
+        st.session_state[pending_diff_attr] = None
+        st.session_state[pending_note_attr] = None
         st.rerun(scope="fragment")
         return
 
     st.divider()
     col_a, col_b = st.columns(2)
     with col_a:
-        if st.button(tr("diff_accept_all_btn"), key=f"accept_all_{st.session_state.cv_diff_round}", use_container_width=True):
+        if st.button(tr("diff_accept_all_btn"), key=f"accept_all_{doc_key}_{st.session_state[diff_round_attr]}", use_container_width=True):
             _maybe_show_accept_warning()
             for c in chunks:
                 _set_diff_status(c.chunk_id, "accepted")
-            st.session_state.current_cv = rebuild_text(chunks, _collect_diff_statuses(chunks))
-            st.session_state.cv_pending_diff = None
-            st.session_state.cv_pending_change_note = None
+            st.session_state[current_attr] = rebuild_text(chunks, _collect_diff_statuses(chunks))
+            st.session_state[pending_diff_attr] = None
+            st.session_state[pending_note_attr] = None
             st.rerun(scope="fragment")
     with col_b:
-        if st.button(tr("diff_ignore_all_btn"), key=f"ignore_all_{st.session_state.cv_diff_round}", use_container_width=True):
+        if st.button(tr("diff_ignore_all_btn"), key=f"ignore_all_{doc_key}_{st.session_state[diff_round_attr]}", use_container_width=True):
             for c in chunks:
                 _set_diff_status(c.chunk_id, "ignored")
-            st.session_state.current_cv = rebuild_text(chunks, _collect_diff_statuses(chunks))
-            st.session_state.cv_pending_diff = None
-            st.session_state.cv_pending_change_note = None
+            st.session_state[current_attr] = rebuild_text(chunks, _collect_diff_statuses(chunks))
+            st.session_state[pending_diff_attr] = None
+            st.session_state[pending_note_attr] = None
             st.rerun(scope="fragment")
 
 
@@ -322,7 +330,7 @@ def _render_cv_subtab(style: StyleConfig):
     if st.session_state.cv_pending_diff:
         if st.session_state.cv_pending_change_note:
             st.caption(st.session_state.cv_pending_change_note)
-        _render_diff_view(st.session_state.cv_pending_diff)
+        _render_diff_view(st.session_state.cv_pending_diff, doc_key="cv")
     else:
         st.markdown(render_preview_html(st.session_state.current_cv, style), unsafe_allow_html=True)
 
@@ -374,7 +382,7 @@ def _render_cv_subtab(style: StyleConfig):
                     st.session_state.cv_pending_diff = compute_diff(
                         st.session_state.current_cv,
                         document,
-                        round_id=str(st.session_state.cv_diff_round),
+                        round_id=f"cv_{st.session_state.cv_diff_round}",
                     )
                     st.session_state.cv_pending_change_note = change_note
                     success = True
@@ -386,8 +394,10 @@ def _render_cv_subtab(style: StyleConfig):
 
 @st.fragment
 def _render_cl_subtab(style: StyleConfig):
-    """Cover letter sub-tab: content + downloads + refine-and-replace.
-    Same fragment isolation as the CV sub-tab."""
+    """Cover letter sub-tab: content + downloads + changes log + refine-with-diff.
+    Same line-by-line diff mechanism as the CV sub-tab (CVO-3 — previously
+    the cover letter only supported a full replace, inconsistent with the
+    CV's per-change Accept/Ignore)."""
     if st.session_state.show_accept_warning_once:
         st.warning(tr("diff_irreversible_warning"))
         st.session_state.show_accept_warning_once = False
@@ -396,7 +406,13 @@ def _render_cl_subtab(style: StyleConfig):
     pdf_exporter = PDFExporter()
 
     st.subheader(tr("results_letter_heading"))
-    st.markdown(render_preview_html(st.session_state.current_cl, style), unsafe_allow_html=True)
+
+    if st.session_state.cl_pending_diff:
+        if st.session_state.cl_pending_change_note:
+            st.caption(st.session_state.cl_pending_change_note)
+        _render_diff_view(st.session_state.cl_pending_diff, doc_key="cl")
+    else:
+        st.markdown(render_preview_html(st.session_state.current_cl, style), unsafe_allow_html=True)
 
     col5, col6 = st.columns(2)
     with col5:
@@ -413,34 +429,9 @@ def _render_cl_subtab(style: StyleConfig):
             st.warning(tr("export_unavailable").format(error=e))
 
     st.divider()
-    cl_expanded = st.session_state.cl_refine_count > 0
+    cl_expanded = st.session_state.cl_diff_round > 0
     with st.expander(tr("refine_letter_expander_title"), expanded=cl_expanded):
-        if st.session_state.cl_pending_response:
-            if st.session_state.cl_pending_change_note:
-                st.caption(st.session_state.cl_pending_change_note)
-            st.markdown(tr("letter_refined_heading"))
-            st.markdown(st.session_state.cl_pending_response)
-
-            if st.button(tr("letter_replace_btn"), key="replace_letter_btn"):
-                _maybe_show_accept_warning()
-                st.session_state.current_cl = st.session_state.cl_pending_response
-                st.session_state.cl_pending_response = None
-                st.session_state.cl_pending_change_note = None
-                st.rerun(scope="fragment")
-
-            col7, col8 = st.columns(2)
-            with col7:
-                try:
-                    pending_docx = exporter.cover_letter_to_docx(st.session_state.cl_pending_response, style=style)
-                    st.download_button(tr("dl_letter_docx"), data=pending_docx, file_name="Refined_Cover_Letter.docx", mime=DOCX_MIME, key="dl_cl_pending_docx_btn")
-                except Exception:
-                    pass
-            with col8:
-                try:
-                    pending_pdf = pdf_exporter.cover_letter_to_pdf(st.session_state.cl_pending_response, style=style)
-                    st.download_button(tr("dl_letter_pdf"), data=pending_pdf, file_name="Refined_Cover_Letter.pdf", mime=PDF_MIME, key="dl_cl_pending_pdf_btn")
-                except Exception:
-                    pass
+        st.caption(tr("refine_chat_examples"))
 
         quota_exhausted = _quota_exhausted()
         st.caption(_quota_caption_text())
@@ -460,9 +451,13 @@ def _render_cl_subtab(style: StyleConfig):
                         max_tokens=3000,
                     )
                     document, change_note = _split_cv_and_changes(strip_fences(raw_response))
-                    st.session_state.cl_pending_response = document
+                    st.session_state.cl_diff_round += 1
+                    st.session_state.cl_pending_diff = compute_diff(
+                        st.session_state.current_cl,
+                        document,
+                        round_id=f"cl_{st.session_state.cl_diff_round}",
+                    )
                     st.session_state.cl_pending_change_note = change_note
-                    st.session_state.cl_refine_count += 1
                     success = True
                 except Exception as e:
                     st.error(tr("refine_error").format(error=e))
@@ -694,9 +689,9 @@ with tab_input:
         st.session_state.cv_pending_diff = None
         st.session_state.cv_pending_change_note = None
         st.session_state.cv_diff_round = 0
-        st.session_state.cl_pending_response = None
+        st.session_state.cl_pending_diff = None
         st.session_state.cl_pending_change_note = None
-        st.session_state.cl_refine_count = 0
+        st.session_state.cl_diff_round = 0
 
         prompt_builder = PromptBuilder(language=output_language)
         st.session_state.ai_calls_used += 1

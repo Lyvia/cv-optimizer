@@ -165,11 +165,12 @@ In Results tab, create two sub-tabs: **CV** and **Cover Letter**.
 Session state: `cv_messages`, `cl_messages`, `current_cv`, `current_cl`.
 Each chat message counts toward the 10-use session limit.
 
-### F5 — Diff view with Accept/Reject (CV only)
+### F5 — Diff view with Accept/Reject (CV and cover letter)
 
 Create `src/differ.py` using `difflib` (stdlib, no new dependency).
 
-Behavior: after AI returns a refined CV, compute line-by-line diff between `current_cv` and the response.
+Behavior: after AI returns a refined document, compute line-by-line diff between the document's
+current state (`current_cv` or `current_cl`) and the response.
 - Equal lines: normal display
 - Removed lines: red/pink background, no buttons
 - Added/replaced lines: green background, `[✓ Accept]` and `[✗ Ignore]` buttons per chunk
@@ -182,9 +183,14 @@ Always show a download button reflecting the current merged state.
 **Irreversibility:** on any accept action, show once per session:
 `st.warning("⚠️ Once accepted, this cannot be undone. The accepted version becomes your new baseline for future refinements.")`
 
-**Reference:** always diff against `current_cv` (the last accepted state — sliding reference, Option B).
+**Reference:** always diff against the document's current accepted state (sliding reference, Option B).
 
-**Cover letter:** no diff. Show refined version below with `[Replace cover letter]` button + same warning.
+**Cover letter:** uses the exact same diff/Accept/Ignore mechanism as the CV (CVO-3 — originally
+the cover letter only supported a full replace, which was inconsistent with the CV's per-change
+review and was changed to match). `_render_diff_view()` is shared between both documents via a
+`doc_key` ("cv" or "cl") parameter that selects which session-state-backed document a diff round
+acts on; `compute_diff()`'s `round_id` is namespaced per document (`cv_N` / `cl_N`) so chunk IDs
+from a CV round and a cover-letter round can never collide.
 
 ---
 

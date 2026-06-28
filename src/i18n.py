@@ -130,8 +130,6 @@ UI: dict[Lang, dict[str, str]] = {
         "dl_letter_docx": "📥 Download letter (.docx)",
         "dl_letter_pdf": "📥 Download letter (.pdf)",
         "refine_letter_expander_title": "🔄 Refine this cover letter with AI",
-        "letter_refined_heading": "**Refined version**",
-        "letter_replace_btn": "✓ Replace cover letter",
         "dl_all_zip": "📦 Download everything (.zip)",
     },
     "fr": {
@@ -255,8 +253,6 @@ UI: dict[Lang, dict[str, str]] = {
         "dl_letter_docx": "📥 Télécharger la lettre (.docx)",
         "dl_letter_pdf": "📥 Télécharger la lettre (.pdf)",
         "refine_letter_expander_title": "🔄 Affiner cette lettre avec l'IA",
-        "letter_refined_heading": "**Version affinée**",
-        "letter_replace_btn": "✓ Remplacer la lettre de motivation",
         "dl_all_zip": "📦 Tout télécharger (.zip)",
     },
 }
