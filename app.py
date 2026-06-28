@@ -171,12 +171,14 @@ def _split_cv_and_changes(text: str) -> tuple[str, str]:
     return text.strip(), ""
 
 
-def _build_zip(cv_bytes: bytes, cl_bytes: bytes) -> bytes:
-    """Package CV + cover letter into a single ZIP."""
+def _build_zip(cv_docx: bytes, cv_pdf: bytes, cl_docx: bytes, cl_pdf: bytes) -> bytes:
+    """Package CV + cover letter, both DOCX and PDF, into a single ZIP."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("Optimized_CV.docx", cv_bytes)
-        zf.writestr("Cover_Letter.docx", cl_bytes)
+        zf.writestr("Optimized_CV.docx", cv_docx)
+        zf.writestr("Optimized_CV.pdf", cv_pdf)
+        zf.writestr("Cover_Letter.docx", cl_docx)
+        zf.writestr("Cover_Letter.pdf", cl_pdf)
     buf.seek(0)
     return buf.getvalue()
 
@@ -804,13 +806,16 @@ with tab_results:
         with cl_subtab:
             _render_cl_subtab(style)
 
-        # ── Bundle download (both current documents) ───────────────────────────
+        # ── Bundle download (both current documents, DOCX + PDF) ───────────────
         exporter = DOCXExporter()
+        pdf_exporter = PDFExporter()
         st.divider()
         try:
-            zip_cv = exporter.cv_to_docx(st.session_state.current_cv, style=style)
-            zip_cl = exporter.cover_letter_to_docx(st.session_state.current_cl, style=style)
-            zip_bytes = _build_zip(zip_cv, zip_cl)
+            zip_cv_docx = exporter.cv_to_docx(st.session_state.current_cv, style=style)
+            zip_cv_pdf = pdf_exporter.cv_to_pdf(st.session_state.current_cv, style=style)
+            zip_cl_docx = exporter.cover_letter_to_docx(st.session_state.current_cl, style=style)
+            zip_cl_pdf = pdf_exporter.cover_letter_to_pdf(st.session_state.current_cl, style=style)
+            zip_bytes = _build_zip(zip_cv_docx, zip_cv_pdf, zip_cl_docx, zip_cl_pdf)
             st.download_button(
                 tr("dl_all_zip"),
                 data=zip_bytes,
