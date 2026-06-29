@@ -90,6 +90,13 @@ Be direct. Do not soften the issues to spare the candidate."""
             keyword_rule = "- Use strong, generic keywords for the industry/role identified in the CV"
             relevance_rule = "- Highlight the most transferable skills"
 
+        cv_word_count = len(cv.split())
+        length_rule = (
+            f"- Keep the total length close to the original CV (~{cv_word_count} words) — "
+            "it must fit on the same number of A4 pages as the original. If quantifying "
+            "achievements adds length, trim equally elsewhere; do not let the document grow."
+        )
+
         return f"""{self._lang_instruction}
 
 Rewrite this CV so it is {task_desc}.
@@ -106,6 +113,7 @@ Rewrite this CV so it is {task_desc}.
 - Quantify EVERY achievement possible — if the figure is unknown, use [FIGURE TO COMPLETE]
 - Start every bullet point with a strong action verb
 {relevance_rule}
+{length_rule}
 
 **ATS-friendly structure:**
 - Header: Name | Contact | LinkedIn | City
