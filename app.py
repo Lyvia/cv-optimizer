@@ -9,6 +9,7 @@ import logging
 import re
 import zipfile
 
+import pdfplumber
 import streamlit as st
 
 from src.parsers import parse_document
@@ -805,6 +806,27 @@ with tab_input:
             progress.progress(100, text=tr("progress_done"))
             st.session_state.generated = True
             st.success(tr("generation_success"))
+
+            # Prompt-level length budgets are best-effort (the LLM can still
+            # overshoot) -- verify the actual rendered PDF against the
+            # chosen target_pages and say so plainly rather than silently
+            # serving a CV that doesn't meet it (no extra LLM call: PDF
+            # rendering + page counting is local and free).
+            if target_pages is not None:
+                try:
+                    check_pdf = PDFExporter().cv_to_pdf(
+                        st.session_state.current_cv, style=st.session_state.style_config
+                    )
+                    with pdfplumber.open(io.BytesIO(check_pdf)) as pdf:
+                        actual_pages = len(pdf.pages)
+                    if actual_pages > target_pages:
+                        st.warning(
+                            tr("target_length_overflow_warning").format(
+                                actual=actual_pages, target=target_pages
+                            )
+                        )
+                except Exception:
+                    pass
 
         except Exception as e:
             progress.empty()

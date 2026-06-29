@@ -102,10 +102,15 @@ Be direct. Do not soften the issues to spare the candidate."""
             max_words = target_pages * styles.WORDS_PER_PAGE_ESTIMATE
             page_word = "page" if target_pages == 1 else "pages"
             length_rule = (
-                f"- The optimized CV MUST fit within {target_pages} A4 {page_word} "
-                f"(~{max_words} words total, regardless of the original CV's length). "
-                "Cut or condense content as needed, prioritizing the most recent and "
-                "relevant experience."
+                f"- **STRICT LIMIT, highest priority — overrides every other content rule "
+                f"below if they conflict:** the optimized CV MUST fit within {target_pages} "
+                f"A4 {page_word} (~{max_words} words total, regardless of the original CV's "
+                "length). Cut or condense content as needed, prioritizing the most recent "
+                "and relevant experience over completeness."
+            )
+            quantify_rule = (
+                "- Quantify achievements where it adds the most value — skip it for minor "
+                "points rather than risk exceeding the strict length limit above"
             )
         else:
             cv_word_count = len(cv.split())
@@ -114,6 +119,7 @@ Be direct. Do not soften the issues to spare the candidate."""
                 "it must fit on the same number of A4 pages as the original. If quantifying "
                 "achievements adds length, trim equally elsewhere; do not let the document grow."
             )
+            quantify_rule = "- Quantify EVERY achievement possible — if the figure is unknown, use [FIGURE TO COMPLETE]"
 
         return f"""{self._lang_instruction}
 
@@ -127,11 +133,11 @@ Rewrite this CV so it is {task_desc}.
 === RULES FOR THE OPTIMIZED CV ===
 
 **Content:**
+{length_rule}
 {keyword_rule}
-- Quantify EVERY achievement possible — if the figure is unknown, use [FIGURE TO COMPLETE]
+{quantify_rule}
 - Start every bullet point with a strong action verb
 {relevance_rule}
-{length_rule}
 
 **ATS-friendly structure:**
 - Header: Name | Contact | LinkedIn | City

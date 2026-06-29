@@ -69,5 +69,10 @@ FONT_SIZE_TITLE_PT = 14
 # with the CV margins above. Inherently approximate (depends on bullets,
 # headings, and blank lines, which take less than a full line of text) --
 # used only to give optimize_cv()'s explicit 1-page/2-page length budget a
-# ballpark target, not as an exact layout calculation.
-WORDS_PER_PAGE_ESTIMATE = 550
+# ballpark target, not as an exact layout calculation. Measured against the
+# real PDFExporter: a CV built of generic bullets tips from 1 to 2 pages
+# somewhere between 488 and 596 words. Set well below that floor (rather
+# than at the average) for headroom against (a) LLMs overshooting a soft
+# word-count instruction and (b) real CVs having more section-header
+# overhead per word than the generic bullets used to measure this.
+WORDS_PER_PAGE_ESTIMATE = 420

@@ -61,6 +61,11 @@ UI: dict[Lang, dict[str, str]] = {
         "target_length_original": "Match original length",
         "target_length_1page": "1 page",
         "target_length_2page": "2 pages",
+        "target_length_overflow_warning": (
+            "⚠️ The optimized CV is {actual} pages despite the {target}-page target — the AI "
+            "didn't fully meet it this time. Use \"Refine this CV\" in the Results tab with an "
+            "instruction like \"shorten this further to fit {target} page(s)\" to trim it more."
+        ),
         "input_generate_btn": "🚀 Generate",
         "quota_remaining_caption": "AI generations remaining this session: {remaining}/{max}",
         "quota_exhausted_error": (
@@ -194,6 +199,12 @@ UI: dict[Lang, dict[str, str]] = {
         "target_length_original": "Conserver la longueur d'origine",
         "target_length_1page": "1 page",
         "target_length_2page": "2 pages",
+        "target_length_overflow_warning": (
+            "⚠️ Le CV optimisé fait {actual} pages malgré l'objectif de {target} page(s) — "
+            "l'IA n'a pas pleinement respecté la contrainte cette fois. Utilisez « Affiner ce "
+            "CV » dans l'onglet Résultats avec une instruction du type « raccourcis encore pour "
+            "tenir sur {target} page(s) » pour le condenser davantage."
+        ),
         "input_generate_btn": "🚀 Générer",
         "quota_remaining_caption": "Générations IA restantes pour cette session : {remaining}/{max}",
         "quota_exhausted_error": (
