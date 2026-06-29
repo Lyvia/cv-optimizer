@@ -9,7 +9,7 @@ CSS custom injecté via `src/styles.py` → `st.markdown(unsafe_allow_html=True)
 streamlit run app.py                  # démarrer l'app
 pip install -r requirements.txt       # installer les dépendances
 pip install -r requirements-dev.txt   # + pytest pour lancer les tests
-python -m pytest -v                   # lancer tous les tests (test_*.py)
+pytest -v                              # lancer tous les tests (test_*.py) — utiliser le binaire pytest, pas `python -m pytest`
 docker build -t cv-optimizer .        # build Docker
 ```
 

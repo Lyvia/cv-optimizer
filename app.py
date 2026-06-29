@@ -315,11 +315,13 @@ def _render_diff_view(chunks, doc_key: str):
             st.rerun(scope="fragment")
 
 
-@st.fragment
 def _render_cv_subtab(style: StyleConfig):
     """CV sub-tab: content + downloads + changes log + refine-with-diff.
-    A fragment so accept/ignore/refine only redraw this block, not the
-    whole page (preserves scroll position elsewhere)."""
+    Called from the @st.fragment-decorated _render_results_section(), so
+    accept/ignore/refine only redraw that block, not the whole page
+    (preserves scroll position elsewhere) -- and, since the cover letter
+    sub-tab and the bundled ZIP download live in that same fragment, they
+    automatically stay in sync with the latest accepted CV too (CVO-9)."""
     if st.session_state.show_accept_warning_once:
         st.warning(tr("diff_irreversible_warning"))
         st.session_state.show_accept_warning_once = False
@@ -394,11 +396,11 @@ def _render_cv_subtab(style: StyleConfig):
                 st.rerun(scope="fragment")
 
 
-@st.fragment
 def _render_cl_subtab(style: StyleConfig):
     """Cover letter sub-tab: content + downloads + changes log + refine-with-diff.
-    Same line-by-line diff mechanism as the CV sub-tab (CVO-3 — previously
-    the cover letter only supported a full replace, inconsistent with the
+    Called from _render_results_section() -- see _render_cv_subtab()'s
+    docstring. Same line-by-line diff mechanism as the CV sub-tab (CVO-3 —
+    previously the cover letter only supported a full replace, inconsistent with the
     CV's per-change Accept/Ignore)."""
     if st.session_state.show_accept_warning_once:
         st.warning(tr("diff_irreversible_warning"))
@@ -465,6 +467,60 @@ def _render_cl_subtab(style: StyleConfig):
                     st.error(tr("refine_error").format(error=e))
             if success:
                 st.rerun(scope="fragment")
+
+
+def _render_zip_download(style: StyleConfig):
+    """
+    Bundle download (both current documents, DOCX + PDF), always rebuilt
+    from the latest current_cv/current_cl. Called from
+    _render_results_section() -- being in that same fragment is what
+    keeps this transparently up to date after an accept/ignore (CVO-9):
+    no separate "prepare" step needed, since this whole block reruns
+    together whenever either document's diff is acted on.
+    """
+    exporter = DOCXExporter()
+    pdf_exporter = PDFExporter()
+    try:
+        zip_cv_docx = exporter.cv_to_docx(st.session_state.current_cv, style=style)
+        zip_cv_pdf = pdf_exporter.cv_to_pdf(st.session_state.current_cv, style=style)
+        zip_cl_docx = exporter.cover_letter_to_docx(st.session_state.current_cl, style=style)
+        zip_cl_pdf = pdf_exporter.cover_letter_to_pdf(st.session_state.current_cl, style=style)
+        zip_bytes = _build_zip(zip_cv_docx, zip_cv_pdf, zip_cl_docx, zip_cl_pdf)
+        st.download_button(
+            tr("dl_all_zip"),
+            data=zip_bytes,
+            file_name="complete_application.zip",
+            mime="application/zip",
+            key="dl_all_zip_btn",
+        )
+    except Exception as e:
+        st.warning(tr("export_unavailable").format(error=e))
+
+
+@st.fragment
+def _render_results_section(style: StyleConfig):
+    """
+    CV sub-tab + cover letter sub-tab + bundled ZIP download, all in one
+    fragment. Combining them (rather than one fragment per sub-tab) is
+    what makes the ZIP transparently reflect the latest accepted state
+    of *both* documents (CVO-9): st.rerun(scope="fragment") reruns
+    whichever @st.fragment function is currently executing, so an
+    accept/ignore inside either sub-tab now reruns this whole block --
+    recomputing the other (unchanged) sub-tab and the ZIP is cheap (no
+    LLM call, just markdown/DOCX/PDF rendering) and invisible to the
+    user, while the rest of the page (Input/Analysis tabs, sidebar)
+    still never reruns, preserving scroll position there (CVO-5).
+    """
+    cv_subtab, cl_subtab = st.tabs([tr("results_subtab_cv"), tr("results_subtab_letter")])
+
+    with cv_subtab:
+        _render_cv_subtab(style)
+
+    with cl_subtab:
+        _render_cl_subtab(style)
+
+    st.divider()
+    _render_zip_download(style)
 
 
 # ─── LLM config — loaded from Streamlit secrets or .env (not exposed to users) ─
@@ -798,30 +854,4 @@ with tab_results:
 
         st.divider()
 
-        cv_subtab, cl_subtab = st.tabs([tr("results_subtab_cv"), tr("results_subtab_letter")])
-
-        with cv_subtab:
-            _render_cv_subtab(style)
-
-        with cl_subtab:
-            _render_cl_subtab(style)
-
-        # ── Bundle download (both current documents, DOCX + PDF) ───────────────
-        exporter = DOCXExporter()
-        pdf_exporter = PDFExporter()
-        st.divider()
-        try:
-            zip_cv_docx = exporter.cv_to_docx(st.session_state.current_cv, style=style)
-            zip_cv_pdf = pdf_exporter.cv_to_pdf(st.session_state.current_cv, style=style)
-            zip_cl_docx = exporter.cover_letter_to_docx(st.session_state.current_cl, style=style)
-            zip_cl_pdf = pdf_exporter.cover_letter_to_pdf(st.session_state.current_cl, style=style)
-            zip_bytes = _build_zip(zip_cv_docx, zip_cv_pdf, zip_cl_docx, zip_cl_pdf)
-            st.download_button(
-                tr("dl_all_zip"),
-                data=zip_bytes,
-                file_name="complete_application.zip",
-                mime="application/zip",
-                key="dl_all_zip_btn",
-            )
-        except Exception as e:
-            st.warning(tr("export_unavailable").format(error=e))
+        _render_results_section(style)
