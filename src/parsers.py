@@ -29,8 +29,8 @@ def parse_document(file) -> str:
         return _parse_txt(file)
     else:
         raise ValueError(
-            f"Format non supporté : '{file.name}'. "
-            "Formats acceptés : PDF, DOCX, TXT."
+            f"Unsupported format: '{file.name}'. "
+            "Accepted formats: PDF, DOCX, TXT."
         )
 
 
@@ -42,7 +42,7 @@ def _parse_pdf(file) -> str:
         import pdfplumber
     except ImportError:
         raise ImportError(
-            "pdfplumber n'est pas installé. Lance : pip install pdfplumber"
+            "pdfplumber is not installed. Run: pip install pdfplumber"
         )
 
     try:
@@ -57,15 +57,15 @@ def _parse_pdf(file) -> str:
 
         if not pages_text:
             raise ValueError(
-                "Aucun texte extrait du PDF. "
-                "Le fichier est peut-être un scan image (non OCR)."
+                "No text extracted from the PDF. "
+                "The file might be a scanned image (no OCR)."
             )
 
         return "\n\n".join(pages_text)
 
     except Exception as e:
         if "pdfplumber" in str(type(e).__module__):
-            raise ValueError(f"Erreur lecture PDF : {e}")
+            raise ValueError(f"Error reading PDF: {e}")
         raise
 
 
@@ -75,7 +75,7 @@ def _parse_docx(file) -> str:
         from docx import Document
     except ImportError:
         raise ImportError(
-            "python-docx n'est pas installé. Lance : pip install python-docx"
+            "python-docx is not installed. Run: pip install python-docx"
         )
 
     try:
@@ -98,12 +98,12 @@ def _parse_docx(file) -> str:
                     parts.append(" | ".join(row_cells))
 
         if not parts:
-            raise ValueError("Aucun texte trouvé dans le fichier DOCX.")
+            raise ValueError("No text found in the DOCX file.")
 
         return "\n".join(parts)
 
     except Exception as e:
-        raise ValueError(f"Erreur lecture DOCX : {e}")
+        raise ValueError(f"Error reading DOCX: {e}")
 
 
 def _parse_txt(file) -> str:
@@ -117,4 +117,4 @@ def _parse_txt(file) -> str:
         except UnicodeDecodeError:
             return content.decode("latin-1").strip()
     except Exception as e:
-        raise ValueError(f"Erreur lecture TXT : {e}")
+        raise ValueError(f"Error reading TXT: {e}")

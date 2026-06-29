@@ -1,6 +1,8 @@
 """
 prompts.py — Prompt templates for CV analysis, optimization, cover letter, refinement.
 All prompts enforce a specific output language passed at instantiation.
+The job description is optional: when absent, prompts fall back to a
+general-purpose version of the task instead of a job-specific one.
 """
 
 
@@ -9,66 +11,66 @@ class PromptBuilder:
     Build task-specific prompts with language control.
 
     Args:
-        language: Output language (e.g., "Français", "English", "Español")
+        language: Output language (e.g., "English", "Français", "Español")
     """
 
-    def __init__(self, language: str = "Français"):
+    def __init__(self, language: str = "English"):
         self.language = language
         self._lang_instruction = (
-            f"IMPORTANT : Réponds UNIQUEMENT en {language}. "
-            f"Tout le contenu produit doit être rédigé en {language}."
+            f"IMPORTANT: Respond ONLY in {language}. "
+            f"All produced content must be written in {language}."
         )
 
     # ─── Analysis ─────────────────────────────────────────────────────────────
 
     def analysis(self, cv: str, job: str) -> str:
         """
-        Prompt: analyze the original CV against the job description.
+        Prompt: analyze the original CV, against the job description if provided.
         Output: structured markdown report.
         """
         if job.strip():
-            job_block = f"=== FICHE DE POSTE ===\n{job}"
-            match_section = """## 1. Score de correspondance (0-100)
-Donne un score chiffré et justifie-le en 3 phrases maximum. Sois honnête, même si le score est faible."""
+            job_block = f"=== JOB DESCRIPTION ===\n{job}"
+            match_section = """## 1. Match score (0-100)
+Give a numeric score and justify it in 3 sentences max. Be honest, even if the score is low."""
         else:
-            job_block = "=== FICHE DE POSTE ===\nAucune fiche de poste fournie — réalise une analyse générale du CV."
-            match_section = """## 1. Qualité globale du CV (0-100)
-Évalue la qualité globale du CV (clarté, structure, impact) en l'absence de fiche de poste. Justifie en 3 phrases."""
+            job_block = "=== JOB DESCRIPTION ===\nNo job description provided — perform a general analysis of the CV."
+            match_section = """## 1. Overall CV quality (0-100)
+Rate the overall quality of the CV (clarity, structure, impact) in the absence of a job description. Justify in 3 sentences."""
 
         return f"""{self._lang_instruction}
 
-Analyse ce CV avec un regard d'expert RH et spécialiste ATS.
+Analyze this CV as an expert HR recruiter and ATS specialist.
 
-=== CV ORIGINAL ===
+=== ORIGINAL CV ===
 {cv}
 
 {job_block}
 
-Produis une analyse structurée avec exactement ces sections :
+Produce a structured analysis with exactly these sections:
 
 {match_section}
 
-## 2. Points forts du CV
-Liste 3 à 5 éléments du CV qui sont bien alignés avec le poste. Une ligne par point.
+## 2. CV strengths
+List 3 to 5 elements of the CV that are well aligned with the job. One line per point.
 
-## 3. Lacunes critiques
-Liste les compétences, mots-clés ou expériences manquants que les systèmes ATS et les recruteurs vont chercher. Distingue :
-- **Mots-clés absents** (termes du poste non présents dans le CV)
-- **Compétences manquantes** (réelles lacunes de profil)
-- **Expériences non mises en valeur** (probablement présentes mais mal formulées)
+## 3. Critical gaps
+List the missing skills, keywords, or experience that ATS systems and recruiters will look for. Distinguish:
+- **Missing keywords** (terms from the job posting not present in the CV)
+- **Missing skills** (genuine profile gaps)
+- **Underrepresented experience** (probably present but poorly phrased)
 
-## 4. Problèmes ATS techniques
-Identifie les problèmes de format ou de structure qui pénalisent le parsing ATS :
-- Intitulés de sections non standard
-- Informations enfouies dans des tableaux/colonnes (invisibles pour ATS)
-- Manque de mots-clés exacts du poste
-- Acronymes sans développement (ou inversement)
-- Autres
+## 4. Technical ATS issues
+Identify format or structure issues that hurt ATS parsing:
+- Non-standard section headings
+- Information buried in tables/columns (invisible to ATS)
+- Missing exact keywords from the job posting
+- Undefined acronyms (or the reverse)
+- Other issues
 
-## 5. Top 5 des actions prioritaires
-Classe 5 actions par ordre d'impact décroissant. Formule chacune en une phrase concrète et actionnable.
+## 5. Top 5 priority actions
+Rank 5 actions by decreasing impact. Phrase each as a concrete, actionable sentence.
 
-Sois direct. Ne minimise pas les problèmes pour ménager le candidat."""
+Be direct. Do not soften the issues to spare the candidate."""
 
     # ─── CV Optimization ──────────────────────────────────────────────────────
 
@@ -78,55 +80,55 @@ Sois direct. Ne minimise pas les problèmes pour ménager le candidat."""
         Output: optimized CV in markdown + separator + changes explanation.
         """
         if job.strip():
-            job_block = f"=== FICHE DE POSTE ===\n{job}"
-            task_desc = "parfaitement optimisé ATS pour ce poste spécifique"
-            keyword_rule = "- Intègre naturellement les mots-clés exacts de la fiche de poste (pas du keyword stuffing)"
-            relevance_rule = "{relevance_rule}"
+            job_block = f"=== JOB DESCRIPTION ===\n{job}"
+            task_desc = "perfectly ATS-optimized for this specific job"
+            keyword_rule = "- Naturally weave in the exact keywords from the job description (not keyword stuffing)"
+            relevance_rule = "- Remove information irrelevant to THIS job"
         else:
-            job_block = "=== FICHE DE POSTE ===\nAucune fiche fournie — optimise pour un profil ATS généraliste."
-            task_desc = "optimisé ATS de façon générale, sans poste cible spécifique"
-            keyword_rule = "- Utilise des mots-clés génériques forts pour le secteur/métier identifié dans le CV"
-            relevance_rule = "- Mets en avant les compétences les plus transférables"
+            job_block = "=== JOB DESCRIPTION ===\nNo job description provided — optimize for a general-purpose ATS profile."
+            task_desc = "ATS-optimized in general, with no specific target job"
+            keyword_rule = "- Use strong, generic keywords for the industry/role identified in the CV"
+            relevance_rule = "- Highlight the most transferable skills"
 
         return f"""{self._lang_instruction}
 
-Réécris ce CV pour qu'il soit {task_desc}.
+Rewrite this CV so it is {task_desc}.
 
-=== CV ORIGINAL ===
+=== ORIGINAL CV ===
 {cv}
 
 {job_block}
 
-=== RÈGLES POUR LE CV OPTIMISÉ ===
+=== RULES FOR THE OPTIMIZED CV ===
 
-**Contenu :**
+**Content:**
 {keyword_rule}
-- Quantifie TOUTES les réalisations possibles — si la donnée est inconnue, mets [CHIFFRE À COMPLÉTER]
-- Commence chaque bullet point par un verbe d'action fort
+- Quantify EVERY achievement possible — if the figure is unknown, use [FIGURE TO COMPLETE]
+- Start every bullet point with a strong action verb
 {relevance_rule}
 
-**Structure ATS-friendly :**
-- En-tête : Nom | Contact | LinkedIn | Ville
-- Sections dans cet ordre : Résumé professionnel > Expérience > Compétences > Formation > (autres si pertinent)
-- Intitulés de section standard : "Expérience professionnelle", "Compétences", "Formation"
-- PAS de tableaux, colonnes, headers/footers, images
+**ATS-friendly structure:**
+- Header: Name | Contact | LinkedIn | City
+- Sections in this order: Professional Summary > Experience > Skills > Education > (others if relevant)
+- Standard section headings: "Professional Experience", "Skills", "Education"
+- NO tables, columns, headers/footers, images
 
-**Format de sortie :**
-Écris le CV complet en Markdown propre.
-Puis place exactement cette ligne séparatrice :
+**Output format:**
+Write the complete CV in clean Markdown.
+Then place exactly this separator line:
 ---CHANGES---
-Puis écris la section ci-dessous.
+Then write the section below.
 
-=== SECTION APRÈS LE SÉPARATEUR ===
+=== SECTION AFTER THE SEPARATOR ===
 
-## Modifications apportées et pourquoi
+## Changes made and why
 
-Explique chaque changement significatif :
-1. **Ce qui a changé** : décris la modification précise
-2. **Pourquoi** : impact sur l'ATS ou l'impression du recruteur
-3. **Action requise du candidat** : signale avec [ACTION REQUISE] tout élément à vérifier ou compléter
+Explain each significant change:
+1. **What changed**: describe the precise modification
+2. **Why**: impact on ATS parsing or recruiter impression
+3. **Action required from the candidate**: flag with [ACTION REQUIRED] anything to verify or complete
 
-Sois exhaustif mais concis. Cette section est destinée au candidat pour comprendre la logique."""
+Be thorough but concise. This section is meant to help the candidate understand the reasoning."""
 
     # ─── Cover Letter ─────────────────────────────────────────────────────────
 
@@ -136,41 +138,45 @@ Sois exhaustif mais concis. Cette section est destinée au candidat pour compren
         Output: the letter only, in markdown.
         """
         if not job.strip():
-            job_note = "Aucune fiche de poste fournie. Rédige une lettre de motivation générale mettant en valeur le profil du candidat, sans cibler un poste spécifique. Utilise [NOM DE L'ENTREPRISE] et [POSTE VISÉ] comme placeholders."
+            job_note = (
+                "No job description provided. Write a general cover letter highlighting the "
+                "candidate's profile, without targeting a specific job. Use [COMPANY NAME] and "
+                "[TARGET POSITION] as placeholders."
+            )
         else:
             job_note = ""
 
         return f"""{self._lang_instruction}
 
-Rédige une lettre de motivation percutante pour cette candidature.
+Write a compelling cover letter for this application.
 {job_note}
 
-=== CV DU CANDIDAT ===
+=== CANDIDATE'S CV ===
 {cv}
 
-=== FICHE DE POSTE ===
+=== JOB DESCRIPTION ===
 {job}
 
-=== RÈGLES ===
+=== RULES ===
 
-**Structure (4 paragraphes max) :**
-1. **Accroche** : phrase d'ouverture originale qui n'est pas "Je me permets de vous adresser ma candidature". Mentionne le poste exact.
-2. **Corps (1-2 paragraphes)** : connecte 2-3 expériences spécifiques du CV aux exigences concrètes du poste. Utilise des faits et chiffres.
-3. **Valeur ajoutée** : ce que le candidat apporte de différenciant par rapport à un profil standard.
-4. **Conclusion** : call-to-action clair, formule de politesse professionnelle.
+**Structure (4 paragraphs max):**
+1. **Opening**: an original opening line that is not "I am writing to apply for...". Mention the exact job title.
+2. **Body (1-2 paragraphs)**: connect 2-3 specific experiences from the CV to the job's concrete requirements. Use facts and figures.
+3. **Added value**: what sets the candidate apart from a standard profile.
+4. **Closing**: clear call-to-action, professional sign-off.
 
-**Interdits :**
-- "Je suis quelqu'un de dynamique et motivé"
-- "Travail en équipe" comme qualité principale
-- Répéter le CV mot pour mot
-- Dépasser 350 mots
+**Forbidden:**
+- "I am a dynamic and motivated person"
+- "Teamwork" as the main selling point
+- Repeating the CV word for word
+- Exceeding 350 words
 
-**Placeholders à utiliser :**
-- [NOM DU CANDIDAT] pour le nom
-- [NOM DE L'ENTREPRISE] pour l'entreprise
-- [DATE] pour la date
+**Placeholders to use:**
+- [CANDIDATE NAME] for the name
+- [COMPANY NAME] for the company
+- [DATE] for the date
 
-Écris uniquement la lettre, sans titre ni explication autour."""
+Write only the letter, with no title or surrounding explanation."""
 
     # ─── Refinement ───────────────────────────────────────────────────────────
 
@@ -181,18 +187,20 @@ Rédige une lettre de motivation percutante pour cette candidature.
         """
         return f"""{self._lang_instruction}
 
-Un candidat veut affiner ses documents de candidature. Applique son instruction avec précision.
+A candidate wants to refine their application documents. Apply their instruction precisely.
 
-=== DOCUMENTS ACTUELS ===
+=== CURRENT DOCUMENTS ===
 {current_content}
 
-=== INSTRUCTION DE L'UTILISATEUR ===
+=== USER INSTRUCTION ===
 {instruction}
 
-=== CONSIGNES ===
-- Applique l'instruction demandée
-- Si l'instruction est ambiguë, choisis l'interprétation la plus raisonnable et signale-le
-- Retourne le document modifié en entier (pas uniquement les parties changées)
-- Après le document, ajoute une note courte : "**Modifications effectuées :** [liste des changements]"
+=== GUIDELINES ===
+- Apply the requested instruction
+- If the instruction is ambiguous, choose the most reasonable interpretation and flag it
+- Return the modified document in full (not only the changed parts)
+- Then place exactly this separator line:
+---CHANGES---
+- Then add a short note: "**Changes made:** [list of changes]"
 
-Ne demande pas de confirmation. Agis directement."""
+Do not ask for confirmation. Act directly."""

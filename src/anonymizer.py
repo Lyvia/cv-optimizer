@@ -48,7 +48,7 @@ def anonymize(text: str) -> AnonymizationResult:
         placeholder = f"[EMAIL_{i + 1}]"
         replacements[placeholder] = email
         result = result.replace(email, placeholder)
-        summary.append(f"Email : {email[:3]}***@***")
+        summary.append(f"Email: {email[:3]}***@***")
 
     # ── 2. Phone numbers ──────────────────────────────────────────────────────
     # Matches: +33 6 12 34 56 78 / 06.12.34.56.78 / 0612345678 / +1 (555) 000-0000
@@ -68,11 +68,11 @@ def anonymize(text: str) -> AnonymizationResult:
 
     # Replace in reverse order to preserve positions
     for i, (start, end, raw) in enumerate(reversed(phones_found)):
-        placeholder = f"[TÉLÉPHONE_{len(phones_found) - i}]"
+        placeholder = f"[PHONE_{len(phones_found) - i}]"
         if raw not in replacements.values():
             replacements[placeholder] = raw
             result = result[:start] + placeholder + result[end:]
-            summary.append(f"Téléphone : {raw[:4]}***")
+            summary.append(f"Phone: {raw[:4]}***")
 
     # ── 3. LinkedIn URLs ──────────────────────────────────────────────────────
     linkedin_urls = re.findall(
@@ -84,7 +84,7 @@ def anonymize(text: str) -> AnonymizationResult:
         placeholder = f"[LINKEDIN_{i + 1}]"
         replacements[placeholder] = url
         result = result.replace(url, placeholder)
-        summary.append("URL LinkedIn")
+        summary.append("LinkedIn URL")
 
     # ── 4. GitHub URLs ────────────────────────────────────────────────────────
     github_urls = re.findall(
@@ -96,7 +96,7 @@ def anonymize(text: str) -> AnonymizationResult:
         placeholder = f"[GITHUB_{i + 1}]"
         replacements[placeholder] = url
         result = result.replace(url, placeholder)
-        summary.append("URL GitHub")
+        summary.append("GitHub URL")
 
     # ── 5. Other personal URLs (portfolio, personal site) ────────────────────
     other_urls = re.findall(
@@ -105,18 +105,27 @@ def anonymize(text: str) -> AnonymizationResult:
         re.IGNORECASE
     )
     for i, url in enumerate(dict.fromkeys(other_urls)):
-        placeholder = f"[URL_PERSO_{i + 1}]"
+        placeholder = f"[PERSONAL_URL_{i + 1}]"
         replacements[placeholder] = url
         result = result.replace(url, placeholder)
-        summary.append(f"URL personnelle")
+        summary.append("Personal URL")
 
     # ── 6. French postal codes + city ─────────────────────────────────────────
-    postal = re.findall(r'\b\d{5}\b(?:\s+[A-ZÀ-Ÿ][a-zA-ZÀ-ÿ\-\s]{2,30})?', result)
+    # City name is required (not optional): a bare 5-digit number with nothing
+    # following it is not a postal code on its own (see module docstring:
+    # "city + zip code") -- this also excludes standard numbers like
+    # "ISO 27001 certified", since "certified" isn't a capitalized city name.
+    # The "ISO" lookbehind is a second guard for the rarer case of a
+    # capitalized word right after (e.g. "ISO 27001 Standard").
+    postal = re.findall(
+        r'(?<![Ii][Ss][Oo]\s)\b\d{5}\b\s+[A-ZÀ-Ÿ][a-zA-ZÀ-ÿ\-\s]{2,30}',
+        result
+    )
     for i, addr in enumerate(dict.fromkeys(postal)):
-        placeholder = f"[ADRESSE_{i + 1}]"
+        placeholder = f"[ADDRESS_{i + 1}]"
         replacements[placeholder] = addr
         result = result.replace(addr, placeholder)
-        summary.append(f"Code postal/ville : {addr[:5]}***")
+        summary.append(f"Postal code/city: {addr[:5]}***")
 
     # ── 7. Full name (heuristic) ──────────────────────────────────────────────
     # Looks at the first non-empty lines for a name-like pattern
@@ -130,10 +139,10 @@ def anonymize(text: str) -> AnonymizationResult:
             and not any(w.lower() in _COMMON_CV_WORDS for w in words)
         )
         if is_name_like:
-            placeholder = "[NOM COMPLET]"
+            placeholder = "[FULL NAME]"
             replacements[placeholder] = line
             result = result.replace(line, placeholder)
-            summary.append(f"Nom : {line[:1]}***")
+            summary.append(f"Name: {line[:1]}***")
             break
 
     return AnonymizationResult(
