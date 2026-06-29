@@ -660,6 +660,17 @@ with tab_input:
     )
 
     st.divider()
+
+    # ── Target CV length (CVO-13) ────────────────────────────────────────────
+    target_length_choice = st.radio(
+        tr("target_length_label"),
+        [tr("target_length_original"), tr("target_length_1page"), tr("target_length_2page")],
+        horizontal=True,
+        key="target_length_choice",
+    )
+    st.caption(tr("target_length_caption"))
+
+    st.divider()
     generate_btn = st.button(
         tr("input_generate_btn"),
         type="primary",
@@ -766,10 +777,17 @@ with tab_input:
                 max_tokens=4000,
             ))
 
+            if target_length_choice == tr("target_length_1page"):
+                target_pages = 1
+            elif target_length_choice == tr("target_length_2page"):
+                target_pages = 2
+            else:
+                target_pages = None
+
             progress.progress(45, text=tr("progress_optimizing"))
             raw_opt = strip_fences(llm.generate(
                 system="You are an expert CV writer and ATS specialist.",
-                user=prompt_builder.optimize_cv(cv_for_llm, job_content),
+                user=prompt_builder.optimize_cv(cv_for_llm, job_content, target_pages=target_pages),
                 max_tokens=8000,
             ))
             st.session_state.optimized_cv, st.session_state.changes = _split_cv_and_changes(raw_opt)

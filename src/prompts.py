@@ -5,6 +5,8 @@ The job description is optional: when absent, prompts fall back to a
 general-purpose version of the task instead of a job-specific one.
 """
 
+from . import styles
+
 
 class PromptBuilder:
     """
@@ -74,10 +76,16 @@ Be direct. Do not soften the issues to spare the candidate."""
 
     # ─── CV Optimization ──────────────────────────────────────────────────────
 
-    def optimize_cv(self, cv: str, job: str) -> str:
+    def optimize_cv(self, cv: str, job: str, target_pages: int | None = None) -> str:
         """
         Prompt: rewrite the CV to be ATS-optimized for the specific job (or generally if no job).
         Output: optimized CV in markdown + separator + changes explanation.
+
+        Args:
+            target_pages: explicit length budget chosen by the user (1 or 2
+                A4 pages). When None (default), the budget is instead
+                relative to the original CV's own length -- see length_rule
+                below.
         """
         if job.strip():
             job_block = f"=== JOB DESCRIPTION ===\n{job}"
@@ -89,6 +97,23 @@ Be direct. Do not soften the issues to spare the candidate."""
             task_desc = "ATS-optimized in general, with no specific target job"
             keyword_rule = "- Use strong, generic keywords for the industry/role identified in the CV"
             relevance_rule = "- Highlight the most transferable skills"
+
+        if target_pages is not None:
+            max_words = target_pages * styles.WORDS_PER_PAGE_ESTIMATE
+            page_word = "page" if target_pages == 1 else "pages"
+            length_rule = (
+                f"- The optimized CV MUST fit within {target_pages} A4 {page_word} "
+                f"(~{max_words} words total, regardless of the original CV's length). "
+                "Cut or condense content as needed, prioritizing the most recent and "
+                "relevant experience."
+            )
+        else:
+            cv_word_count = len(cv.split())
+            length_rule = (
+                f"- Keep the total length close to the original CV (~{cv_word_count} words) — "
+                "it must fit on the same number of A4 pages as the original. If quantifying "
+                "achievements adds length, trim equally elsewhere; do not let the document grow."
+            )
 
         return f"""{self._lang_instruction}
 
@@ -106,6 +131,7 @@ Rewrite this CV so it is {task_desc}.
 - Quantify EVERY achievement possible — if the figure is unknown, use [FIGURE TO COMPLETE]
 - Start every bullet point with a strong action verb
 {relevance_rule}
+{length_rule}
 
 **ATS-friendly structure:**
 - Header: Name | Contact | LinkedIn | City
