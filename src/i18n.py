@@ -52,6 +52,15 @@ UI: dict[Lang, dict[str, str]] = {
         ),
         "input_debug_toggle": "🐛 Debug mode — show the text sent to the AI",
         "input_debug_help": "Shows the exact content sent to the API, after anonymization. Useful to verify what's being sent.",
+        "target_length_label": "🎯 Target CV length",
+        "target_length_caption": (
+            "\"Match original length\" keeps the optimized CV close to your current CV's length. "
+            "1 or 2 pages applies a stricter target regardless of the original — useful if your "
+            "current CV already runs long and you want a tighter result."
+        ),
+        "target_length_original": "Match original length",
+        "target_length_1page": "1 page",
+        "target_length_2page": "2 pages",
         "input_generate_btn": "🚀 Generate",
         "quota_remaining_caption": "AI generations remaining this session: {remaining}/{max}",
         "quota_exhausted_error": (
@@ -175,6 +184,16 @@ UI: dict[Lang, dict[str, str]] = {
         ),
         "input_debug_toggle": "🐛 Mode debug — afficher le texte envoyé à l'IA",
         "input_debug_help": "Affiche le contenu exact transmis à l'API, après anonymisation. Utile pour vérifier ce qui part.",
+        "target_length_label": "🎯 Longueur cible du CV",
+        "target_length_caption": (
+            "« Conserver la longueur d'origine » garde le CV optimisé proche de la longueur de "
+            "votre CV actuel. 1 ou 2 pages applique une limite stricte indépendamment de "
+            "l'original — utile si votre CV actuel est déjà long et que vous voulez un résultat "
+            "plus condensé."
+        ),
+        "target_length_original": "Conserver la longueur d'origine",
+        "target_length_1page": "1 page",
+        "target_length_2page": "2 pages",
         "input_generate_btn": "🚀 Générer",
         "quota_remaining_caption": "Générations IA restantes pour cette session : {remaining}/{max}",
         "quota_exhausted_error": (

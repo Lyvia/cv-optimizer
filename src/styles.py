@@ -64,3 +64,10 @@ LETTER_MARGINS_IN = {"top": 0.6, "bottom": 0.6, "left": 0.8, "right": 0.8}
 FONT_SIZE_BODY_PT = 10
 FONT_SIZE_SECTION_PT = 11
 FONT_SIZE_TITLE_PT = 14
+
+# Rough estimate of how many words fit on one A4 page at FONT_SIZE_BODY_PT
+# with the CV margins above. Inherently approximate (depends on bullets,
+# headings, and blank lines, which take less than a full line of text) --
+# used only to give optimize_cv()'s explicit 1-page/2-page length budget a
+# ballpark target, not as an exact layout calculation.
+WORDS_PER_PAGE_ESTIMATE = 550
