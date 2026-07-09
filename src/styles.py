@@ -23,28 +23,30 @@ class StyleConfig:
 # Max 4 fonts, all standard Word/Office fonts (safe for DOCX rendering).
 FONT_CHOICES = ["Calibri", "Arial", "Georgia", "Garamond"]
 
-# 3 starter templates. "Classic Blue" matches the app's original default look.
+# 3 starter templates. Colors match the "Atlas" design handoff's template
+# swatches exactly (heading_color == accent_color: the handoff uses a single
+# accent per template for both headings and the contact-line border).
 TEMPLATES: dict[str, StyleConfig] = {
     "Classic Blue": StyleConfig(
         name="Classic Blue",
         text_color="#1A1A1A",
-        heading_color="#1A3A5C",
-        accent_color="#2E6DA4",
+        heading_color="#2B5C8A",
+        accent_color="#2B5C8A",
         font="Calibri",
     ),
     "Modern Minimal": StyleConfig(
         name="Modern Minimal",
         text_color="#222222",
-        heading_color="#000000",
-        accent_color="#666666",
+        heading_color="#1C1B18",
+        accent_color="#1C1B18",
         font="Arial",
         heading_border=False,
     ),
     "Elegant Burgundy": StyleConfig(
         name="Elegant Burgundy",
         text_color="#2E2E2E",
-        heading_color="#7A1F2B",
-        accent_color="#B5495B",
+        heading_color="#7A2B3A",
+        accent_color="#7A2B3A",
         font="Georgia",
         heading_uppercase=False,
     ),
@@ -76,3 +78,140 @@ FONT_SIZE_TITLE_PT = 14
 # word-count instruction and (b) real CVs having more section-header
 # overhead per word than the generic bullets used to measure this.
 WORDS_PER_PAGE_ESTIMATE = 420
+
+
+# ── "Atlas" app theme — custom CSS for the Streamlit UI shell itself ───────
+# (separate from StyleConfig/TEMPLATES above, which style the exported
+# CV/cover-letter documents, not the app's own chrome.)
+#
+# Streamlit doesn't let native widgets be nested inside HTML injected via
+# st.markdown, so the app "card" from the design handoff is recreated by
+# styling .block-container directly (it already wraps every widget on the
+# page) rather than by opening an unclosed <div> before a series of widgets.
+# Finer-grained pieces (top bar, stepper, drop zones, settings panel) are
+# scoped with Streamlit's key=-derived `st-key-<key>` CSS class so this
+# doesn't leak into unrelated widgets elsewhere on the page.
+ATLAS_FONTS_HTML = """
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+"""
+
+ATLAS_CSS = """
+<style>
+:root {
+  --atlas-ink:#1C1B18;
+  --atlas-text:#3A3833;
+  --atlas-muted:#6B6862;
+  --atlas-faint:#8B877E;
+  --atlas-vfaint:#A29E95;
+  --atlas-vvfaint:#B5B1A8;
+  --atlas-accent:#1E6F57;
+  --atlas-accent-hover:#1A6049;
+  --atlas-accent-tint:#E8F1EC;
+  --atlas-accent-soft:#F4FAF7;
+  --atlas-alert:#C2532F;
+  --atlas-alert-tint:#FBEFE9;
+  --atlas-border:rgba(28,27,24,.10);
+  --atlas-border-soft:rgba(28,27,24,.08);
+  --atlas-border-med:rgba(28,27,24,.12);
+  --atlas-border-strong:rgba(28,27,24,.18);
+  --atlas-surface-soft:#F8F6F1;
+  --atlas-page-bg:#EFEBE3;
+}
+
+html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+    background: var(--atlas-page-bg) !important;
+}
+[data-testid="stHeader"] { background: transparent !important; }
+[data-testid="stToolbar"] { right: 8px; }
+
+body, .stMarkdown p, .stMarkdown li, .stMarkdown span, label, .stCaption {
+    font-family: 'Public Sans', system-ui, sans-serif;
+    color: var(--atlas-text);
+}
+.atlas-serif { font-family: 'Newsreader', serif; }
+
+/* ── App card shell: .block-container IS the card ── */
+.block-container {
+    max-width: 940px !important;
+    background: #FFFFFF;
+    border: 1px solid var(--atlas-border);
+    border-radius: 20px;
+    box-shadow: 0 30px 70px -40px rgba(28,27,24,.5);
+    padding: 34px 40px 40px !important;
+    margin-top: 42px;
+    margin-bottom: 64px;
+}
+
+/* ── Top bar — bleeds to the card's edges via negative margin ── */
+.st-key-atlas_topbar {
+    margin: -34px -40px 26px -40px;
+    padding: 14px 28px;
+    border-bottom: 1px solid var(--atlas-border-soft);
+}
+.st-key-atlas_topbar [data-testid="stSelectbox"] > div > div {
+    border-radius: 7px !important;
+    min-height: 32px !important;
+    font-size: 12px !important;
+}
+
+/* ── Stepper ── */
+.st-key-atlas_stepper { margin-bottom: 28px; }
+.st-key-atlas_stepper .stButton > button {
+    border-radius: 20px !important;
+    font-size: 13px !important;
+    padding: 6px 16px !important;
+    box-shadow: none !important;
+}
+
+/* ── Drop zones (Step 1) ── */
+.st-key-atlas_cv_zone {
+    border: 1.5px dashed rgba(30,111,87,.45);
+    background: var(--atlas-accent-soft);
+    border-radius: 14px;
+    padding: 18px 20px 10px;
+}
+.st-key-atlas_job_zone {
+    border: 1.5px dashed var(--atlas-border-strong);
+    background: #FBFAF7;
+    border-radius: 14px;
+    padding: 18px 20px 10px;
+}
+.st-key-atlas_cv_zone [data-testid="stFileUploaderDropzone"],
+.st-key-atlas_job_zone [data-testid="stFileUploaderDropzone"] {
+    background: transparent;
+    border: none;
+    padding: 4px 0;
+}
+
+/* ── Settings panel (Step 1) ── */
+.st-key-atlas_settings {
+    background: var(--atlas-surface-soft);
+    border-radius: 12px;
+    padding: 15px 18px 4px;
+    margin-bottom: 14px;
+}
+
+/* ── Primary CTA ── */
+.st-key-atlas_cta .stButton > button {
+    padding: 16px !important;
+    border-radius: 13px !important;
+    font-size: 15px !important;
+    font-weight: 600 !important;
+}
+
+/* ── Generic pill radius for secondary buttons ── */
+.stButton > button {
+    border-radius: 12px;
+    font-weight: 600;
+}
+</style>
+"""
+
+
+def inject_atlas_theme() -> str:
+    """Return the Atlas theme's font links + CSS as one HTML string, meant
+    to be passed to st.markdown(..., unsafe_allow_html=True) once near the
+    top of app.py."""
+    return ATLAS_FONTS_HTML + ATLAS_CSS

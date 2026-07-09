@@ -20,7 +20,7 @@ from src.pdf_exporter import PDFExporter
 from src.anonymizer import anonymize
 from src.utils import strip_fences
 from src.differ import compute_diff, rebuild_text
-from src import styles, guide_content
+from src import styles
 from src.styles import StyleConfig
 from src.preview import render_preview_html
 from src.i18n import t as i18n_t
@@ -35,20 +35,17 @@ PDF_MIME = "application/pdf"
 st.set_page_config(
     page_title="CV Optimizer AI",
     page_icon="📄",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    layout="centered",
+    initial_sidebar_state="collapsed",
 )
+
+st.markdown(styles.inject_atlas_theme(), unsafe_allow_html=True)
 
 st.markdown("""
 <style>
-    /* ── Base ── */
-    .block-container { padding-top: 1.5rem; }
-    h1 { color: #1a3a5c; }
-    h2 { color: #2e6da4; border-bottom: 1px solid #d0e4f7; padding-bottom: 4px; }
-    .stTabs [data-baseweb="tab"] { font-size: 0.95rem; font-weight: 600; }
     .result-box {
-        background: #f0f7ff;
-        border-left: 4px solid #2e6da4;
+        background: var(--atlas-accent-soft, #F4FAF7);
+        border-left: 4px solid var(--atlas-accent, #1E6F57);
         padding: 1rem;
         border-radius: 4px;
         margin-bottom: 1rem;
@@ -56,37 +53,24 @@ st.markdown("""
 
     /* ── Mobile (≤ 768px) ── */
     @media (max-width: 768px) {
-        /* Stack all columns vertically */
         [data-testid="column"] {
             width: 100% !important;
             flex: 1 1 100% !important;
             min-width: 100% !important;
         }
-        /* Larger tap targets for buttons */
         .stButton > button {
             width: 100%;
             min-height: 3rem;
             font-size: 1rem;
         }
-        /* Full-width download buttons */
         .stDownloadButton > button {
             width: 100%;
             min-height: 2.75rem;
         }
-        /* Reduce heading size on small screens */
-        h1 { font-size: 1.5rem !important; }
-        h2 { font-size: 1.1rem !important; }
-        /* Avoid padding waste */
         .block-container {
-            padding-left: 0.75rem !important;
-            padding-right: 0.75rem !important;
+            padding-left: 1.1rem !important;
+            padding-right: 1.1rem !important;
         }
-        /* Tab labels wrap instead of truncate */
-        .stTabs [data-baseweb="tab"] {
-            font-size: 0.8rem;
-            padding: 0.4rem 0.5rem;
-        }
-        /* Text areas fill width */
         .stTextArea textarea { font-size: 0.9rem; }
     }
 </style>
@@ -110,6 +94,8 @@ def _quota_exhausted() -> bool:
 
 def _init_state():
     defaults = {
+        "wizard_step": 1,
+        "generation_notices": [],
         "analysis": None,
         "optimized_cv": None,
         "changes": None,
@@ -568,120 +554,180 @@ def _quota_caption_text() -> str:
     return f"{base} · {_model}"
 
 
-# ─── Main layout ──────────────────────────────────────────────────────────────
+# ─── Atlas shell — top bar + stepper (common to all 3 steps) ─────────────────
 
-st.title("📄 CV Optimizer AI")
-
-# ── Interface language — first selectable control on the page ────────────────
-ui_lang_choice = st.radio(
-    "Interface language",
-    ["🇬🇧 English", "🇫🇷 Français"],
-    horizontal=True,
-    key="ui_lang_radio",
-)
-st.session_state.ui_lang = "fr" if "Français" in ui_lang_choice else "en"
-
-st.markdown(f"*{tr('app_tagline')}*")
-
-# ── Output language — controls the generated document language, not the UI ──
-st.subheader(tr("output_lang_subheader"))
-st.caption(tr("output_lang_caption"))
-output_language = st.selectbox(
-    "Output language",
-    ["English", "Français", "Español", "Deutsch", "Italiano"],
-    label_visibility="collapsed",
-)
-st.session_state.language = output_language
-
-# ── Disclaimer — always visible, regardless of the active tab ─────────────────
-st.warning(tr("disclaimer_banner"))
-
-if not _api_key:
-    st.error(tr("no_api_key_error"))
-
-tab_guide, tab_input, tab_analysis, tab_results = st.tabs([
-    tr("tab_guide"),
-    tr("tab_input"),
-    tr("tab_analysis"),
-    tr("tab_results"),
-])
+def _render_top_bar():
+    with st.container(key="atlas_topbar"):
+        col_logo, col_lang, col_credits = st.columns([3, 1.3, 1.7])
+        with col_logo:
+            st.markdown(
+                "<div style='display:flex;align-items:center;gap:10px'>"
+                "<div style='width:30px;height:30px;border-radius:8px;background:var(--atlas-accent);"
+                "display:flex;align-items:center;justify-content:center;color:#fff;"
+                "font-family:Newsreader,serif;font-size:18px;font-weight:600'>C</div>"
+                "<span class='atlas-serif' style='font-size:19px;font-weight:600;letter-spacing:-.01em'>"
+                "CV&nbsp;Optimizer</span></div>",
+                unsafe_allow_html=True,
+            )
+        with col_lang:
+            ui_lang_choice = st.selectbox(
+                "Interface language",
+                ["🇬🇧 EN", "🇫🇷 FR"],
+                label_visibility="collapsed",
+                key="ui_lang_select",
+            )
+            st.session_state.ui_lang = "fr" if "FR" in ui_lang_choice else "en"
+        with col_credits:
+            st.markdown(
+                "<div style='text-align:right;padding-top:5px'>"
+                f"<span style='background:var(--atlas-accent-tint);color:var(--atlas-accent);"
+                "border-radius:7px;padding:5px 11px;font-size:12px;font-weight:600;white-space:nowrap'>"
+                f"{tr('credits_pill').format(remaining=_remaining_calls())}</span></div>",
+                unsafe_allow_html=True,
+            )
+    if not _api_key:
+        st.error(tr("no_api_key_error"))
 
 
-# ─── TAB : How to Use ─────────────────────────────────────────────────────────
+def _render_stepper(current_step: int):
+    labels = {1: tr("stepper_step1"), 2: tr("stepper_step2"), 3: tr("stepper_step3")}
+    state_css = []
+    for num in (1, 2, 3):
+        if num < current_step:
+            rule = "background:var(--atlas-accent-tint);color:var(--atlas-accent);"
+        elif num == current_step:
+            rule = "background:var(--atlas-accent);color:#fff;"
+        else:
+            rule = "background:transparent;color:var(--atlas-vvfaint);border:1.5px solid var(--atlas-border-strong);"
+        state_css.append(f".st-key-step_btn_{num} button {{ {rule} font-weight:600; }}")
+    st.markdown(f"<style>{''.join(state_css)}</style>", unsafe_allow_html=True)
 
-with tab_guide:
-    if st.session_state.ui_lang == "en":
-        st.markdown(guide_content.GUIDE_EN)
-    else:
-        st.markdown(guide_content.GUIDE_FR)
+    with st.container(key="atlas_stepper"):
+        c1, cline1, c2, cline2, c3 = st.columns([2.3, 0.35, 2, 0.35, 2.3])
+        with c1:
+            if st.button(("✓ " if current_step > 1 else "1 ") + labels[1], key="step_btn_1", use_container_width=True):
+                st.session_state.wizard_step = 1
+                st.rerun()
+        with cline1:
+            color = "var(--atlas-accent)" if current_step > 1 else "var(--atlas-border-med)"
+            op = "opacity:.45;" if current_step > 1 else ""
+            st.markdown(f"<div style='height:1.5px;background:{color};{op}margin-top:15px'></div>", unsafe_allow_html=True)
+        with c2:
+            if st.button(("✓ " if current_step > 2 else "2 ") + labels[2], key="step_btn_2", use_container_width=True):
+                st.session_state.wizard_step = 2
+                st.rerun()
+        with cline2:
+            color = "var(--atlas-accent)" if current_step > 2 else "var(--atlas-border-med)"
+            op = "opacity:.45;" if current_step > 2 else ""
+            st.markdown(f"<div style='height:1.5px;background:{color};{op}margin-top:15px'></div>", unsafe_allow_html=True)
+        with c3:
+            if st.button("3 " + labels[3], key="step_btn_3", use_container_width=True):
+                st.session_state.wizard_step = 3
+                st.rerun()
 
 
-# ─── TAB : Input ──────────────────────────────────────────────────────────────
+# ─── Step 1 — Import ───────────────────────────────────────────────────────────
 
-with tab_input:
-    st.subheader(tr("input_cv_subheader"))
-    cv_file = st.file_uploader(
-        tr("input_cv_upload_label"),
-        type=["pdf", "docx", "txt"],
-        key="cv_upload",
+def _render_step1():
+    st.markdown(
+        f"<h1 class='atlas-serif' style='margin:0 0 6px;font-size:34px;font-weight:500;"
+        f"letter-spacing:-.015em;line-height:1.1'>{tr('step1_title')}</h1>",
+        unsafe_allow_html=True,
     )
-    cv_text_paste = st.text_area(
-        tr("input_cv_paste_label"),
-        height=180,
-        placeholder=tr("input_cv_placeholder"),
-    )
-
-    st.divider()
-
-    st.subheader(tr("input_job_subheader"))
-    st.caption(tr("input_job_caption"))
-    job_file = st.file_uploader(
-        tr("input_job_upload_label"),
-        type=["pdf", "docx", "txt"],
-        key="job_upload",
-    )
-    job_text_paste = st.text_area(
-        tr("input_job_paste_label"),
-        height=180,
-        placeholder=tr("input_job_placeholder"),
-    )
-
-    st.divider()
-
-    # ── Privacy option ────────────────────────────────────────────────────────
-    anonymize_data = st.toggle(
-        tr("input_anonymize_toggle"),
-        value=True,
-        help=tr("input_anonymize_help"),
-    )
-    debug_mode = st.toggle(
-        tr("input_debug_toggle"),
-        value=False,
-        help=tr("input_debug_help"),
+    st.markdown(
+        f"<p style='margin:0 0 26px;font-size:15px;line-height:1.5;color:var(--atlas-muted);"
+        f"max-width:560px'>{tr('step1_subtitle')}</p>",
+        unsafe_allow_html=True,
     )
 
-    st.divider()
+    col_cv, col_job = st.columns(2)
+    with col_cv:
+        with st.container(key="atlas_cv_zone"):
+            st.markdown(
+                "<div style='width:42px;height:42px;border-radius:11px;background:var(--atlas-accent-tint);"
+                "margin-bottom:8px;display:flex;align-items:center;justify-content:center;"
+                "color:var(--atlas-accent);font-size:20px'>↑</div>"
+                f"<div style='font-size:15px;font-weight:600;margin-bottom:6px'>{tr('step1_cv_zone_title')}</div>",
+                unsafe_allow_html=True,
+            )
+            cv_file = st.file_uploader(
+                tr("input_cv_upload_label"), type=["pdf", "docx", "txt"],
+                key="cv_upload", label_visibility="collapsed",
+            )
+            with st.expander(tr("step1_paste_instead")):
+                cv_text_paste = st.text_area(
+                    tr("input_cv_paste_label"), height=150,
+                    placeholder=tr("input_cv_placeholder"), label_visibility="collapsed",
+                )
+    with col_job:
+        with st.container(key="atlas_job_zone"):
+            st.markdown(
+                "<div style='width:42px;height:42px;border-radius:11px;background:var(--atlas-surface-soft);"
+                "margin-bottom:8px;display:flex;align-items:center;justify-content:center;"
+                "color:var(--atlas-faint);font-size:20px'>+</div>"
+                f"<div style='font-size:15px;font-weight:600;margin-bottom:2px'>{tr('step1_job_zone_title')}</div>"
+                f"<div style='font-size:12.5px;color:var(--atlas-faint);margin-bottom:6px'>"
+                f"{tr('step1_job_zone_subtitle')} · {tr('input_job_caption')}</div>",
+                unsafe_allow_html=True,
+            )
+            job_file = st.file_uploader(
+                tr("input_job_upload_label"), type=["pdf", "docx", "txt"],
+                key="job_upload", label_visibility="collapsed",
+            )
+            with st.expander(tr("step1_paste_instead")):
+                job_text_paste = st.text_area(
+                    tr("input_job_paste_label"), height=150,
+                    placeholder=tr("input_job_placeholder"), label_visibility="collapsed",
+                )
 
-    # ── Target CV length (CVO-13) ────────────────────────────────────────────
-    target_length_choice = st.radio(
-        tr("target_length_label"),
-        [tr("target_length_original"), tr("target_length_1page"), tr("target_length_2page")],
-        horizontal=True,
-        key="target_length_choice",
-    )
-    st.caption(tr("target_length_caption"))
+    with st.container(key="atlas_settings"):
+        col_a, col_b = st.columns([1.4, 1])
+        with col_a:
+            anonymize_data = st.toggle(
+                f"{tr('step1_anonymize_label')} · :green[{tr('recommended_badge')}]",
+                value=True,
+                help=tr("input_anonymize_help"),
+                key="anonymize_toggle",
+            )
+        with col_b:
+            output_language = st.selectbox(
+                tr("step1_output_lang_label"),
+                ["English", "Français", "Español", "Deutsch", "Italiano"],
+                help=tr("output_lang_caption"),
+                key="output_language_select",
+            )
+    st.session_state.language = output_language
 
-    st.divider()
-    generate_btn = st.button(
-        tr("input_generate_btn"),
-        type="primary",
-        use_container_width=True,
-        disabled=_quota_exhausted(),
-    )
+    with st.expander(tr("step1_advanced_label"), expanded=False):
+        debug_mode = st.toggle(
+            tr("input_debug_toggle"), value=False, help=tr("input_debug_help"), key="debug_mode_toggle",
+        )
+        target_length_choice = st.radio(
+            tr("target_length_label"),
+            [tr("target_length_original"), tr("target_length_1page"), tr("target_length_2page")],
+            horizontal=True,
+            key="target_length_choice",
+        )
+        st.caption(tr("target_length_caption"))
+
+    with st.container(key="atlas_cta"):
+        generate_btn = st.button(
+            tr("step1_cta"),
+            type="primary",
+            use_container_width=True,
+            disabled=_quota_exhausted(),
+            key="generate_btn",
+        )
     quota_caption = st.empty()
     quota_caption.caption(_quota_caption_text())
     if _quota_exhausted():
         st.error(tr("quota_exhausted_error").format(max=MAX_AI_CALLS_PER_SESSION))
+
+    st.markdown(
+        f"<p style='margin:8px 0 0;font-size:11.5px;line-height:1.45;color:var(--atlas-vfaint);"
+        f"text-align:center'>{tr('step1_disclaimer')}</p>",
+        unsafe_allow_html=True,
+    )
 
     if generate_btn:
         # ── Validation
@@ -805,7 +851,14 @@ with tab_input:
 
             progress.progress(100, text=tr("progress_done"))
             st.session_state.generated = True
-            st.success(tr("generation_success"))
+
+            # These render on the Results step, not here: the immediate
+            # st.rerun() below discards whatever was drawn in this pass, so
+            # a plain st.success()/st.warning() call right here would never
+            # actually be seen. Queue them and flush once at the top of
+            # _render_step3() instead (the "flash message across a rerun"
+            # pattern) -- same idea as show_accept_warning_once above.
+            st.session_state.generation_notices.append(("success", tr("generation_success")))
 
             # Prompt-level length budgets are best-effort (the LLM can still
             # overshoot) -- verify the actual rendered PDF against the
@@ -820,13 +873,23 @@ with tab_input:
                     with pdfplumber.open(io.BytesIO(check_pdf)) as pdf:
                         actual_pages = len(pdf.pages)
                     if actual_pages > target_pages:
-                        st.warning(
+                        st.session_state.generation_notices.append((
+                            "warning",
                             tr("target_length_overflow_warning").format(
                                 actual=actual_pages, target=target_pages
-                            )
-                        )
+                            ),
+                        ))
                 except Exception:
                     pass
+
+            # Bridging behavior for this pass: one click still runs all 3 LLM
+            # calls (analysis + CV + letter), same as the old single-Generate
+            # flow -- so jump straight to the Results step. Splitting this
+            # into "analyze on step 1→2" / "generate docs on step 2→3" is
+            # deferred to the Step 2 (Analyse) pass, once that screen has its
+            # own real trigger and the score-hero UI to land on.
+            st.session_state.wizard_step = 3
+            st.rerun()
 
         except Exception as e:
             progress.empty()
@@ -834,64 +897,106 @@ with tab_input:
             st.info(tr("generation_error_hint"))
 
 
-# ─── TAB : Analysis ───────────────────────────────────────────────────────────
+# ─── Step 2 — Analyse (bridging: old content, new shell; full Atlas ──────────
+# treatment — score ring, forces/gaps, 5 actions — is the next pass) ─────────
 
-with tab_analysis:
+def _render_step2():
+    st.markdown(
+        f"<h2 class='atlas-serif' style='margin:0 0 18px;font-size:26px;font-weight:500'>"
+        f"{tr('stepper_step2')}</h2>",
+        unsafe_allow_html=True,
+    )
     if st.session_state.analysis:
         st.markdown(st.session_state.analysis)
     else:
         st.info(tr("analysis_empty_hint"))
 
+    st.divider()
+    col_back, col_next = st.columns(2)
+    with col_back:
+        if st.button(tr("wizard_back"), use_container_width=True, key="step2_back"):
+            st.session_state.wizard_step = 1
+            st.rerun()
+    with col_next:
+        if st.button(
+            tr("wizard_view_results"), type="primary", use_container_width=True,
+            key="step2_next", disabled=not st.session_state.optimized_cv,
+        ):
+            st.session_state.wizard_step = 3
+            st.rerun()
 
-# ─── TAB : Results ────────────────────────────────────────────────────────────
 
-with tab_results:
+# ─── Step 3 — Résultats (bridging: old content, new shell) ───────────────────
+
+def _render_step3():
+    if st.session_state.generation_notices:
+        for level, msg in st.session_state.generation_notices:
+            getattr(st, level)(msg)
+        st.session_state.generation_notices = []
+
     if not st.session_state.optimized_cv:
         st.info(tr("results_empty_hint"))
-    else:
-        # ── Visual style controls + live preview ──────────────────────────────
-        st.subheader(tr("results_style_subheader"))
-        st.caption(tr("results_style_caption"))
+        if st.button(tr("wizard_back"), key="step3_back"):
+            st.session_state.wizard_step = 1
+            st.rerun()
+        return
 
-        mode = st.radio(
-            tr("style_mode_label"),
-            [tr("style_mode_template"), tr("style_mode_advanced")],
+    # ── Visual style controls + live preview ──────────────────────────────
+    st.subheader(tr("results_style_subheader"))
+    st.caption(tr("results_style_caption"))
+
+    mode = st.radio(
+        tr("style_mode_label"),
+        [tr("style_mode_template"), tr("style_mode_advanced")],
+        horizontal=True,
+        key="style_mode",
+    )
+
+    if mode == tr("style_mode_template"):
+        template_names = list(styles.TEMPLATES.keys())
+        chosen_name = st.radio(
+            tr("style_template_label"),
+            template_names,
             horizontal=True,
-            key="style_mode",
+            key="template_choice",
+        )
+        style = styles.TEMPLATES[chosen_name]
+    else:
+        base = st.session_state.style_config
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            text_color = st.color_picker(tr("style_color_text_label"), value=base.text_color)
+        with col2:
+            heading_color = st.color_picker(tr("style_color_heading_label"), value=base.heading_color)
+        with col3:
+            font_index = styles.FONT_CHOICES.index(base.font) if base.font in styles.FONT_CHOICES else 0
+            font = st.selectbox(tr("style_font_label"), styles.FONT_CHOICES, index=font_index)
+        style = StyleConfig(
+            name="Custom",
+            text_color=text_color,
+            heading_color=heading_color,
+            accent_color=heading_color,
+            font=font,
+            heading_uppercase=base.heading_uppercase,
+            heading_border=base.heading_border,
         )
 
-        if mode == tr("style_mode_template"):
-            template_names = list(styles.TEMPLATES.keys())
-            chosen_name = st.radio(
-                tr("style_template_label"),
-                template_names,
-                horizontal=True,
-                key="template_choice",
-            )
-            style = styles.TEMPLATES[chosen_name]
-        else:
-            base = st.session_state.style_config
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                text_color = st.color_picker(tr("style_color_text_label"), value=base.text_color)
-            with col2:
-                heading_color = st.color_picker(tr("style_color_heading_label"), value=base.heading_color)
-            with col3:
-                font_index = styles.FONT_CHOICES.index(base.font) if base.font in styles.FONT_CHOICES else 0
-                font = st.selectbox(tr("style_font_label"), styles.FONT_CHOICES, index=font_index)
-            style = StyleConfig(
-                name="Custom",
-                text_color=text_color,
-                heading_color=heading_color,
-                accent_color=heading_color,
-                font=font,
-                heading_uppercase=base.heading_uppercase,
-                heading_border=base.heading_border,
-            )
+    st.session_state.style_config = style
+    st.caption(tr("results_style_live_note"))
 
-        st.session_state.style_config = style
-        st.caption(tr("results_style_live_note"))
+    st.divider()
 
-        st.divider()
+    _render_results_section(style)
 
-        _render_results_section(style)
+
+# ─── Main layout ──────────────────────────────────────────────────────────────
+
+_render_top_bar()
+_render_stepper(st.session_state.wizard_step)
+
+if st.session_state.wizard_step == 1:
+    _render_step1()
+elif st.session_state.wizard_step == 2:
+    _render_step2()
+else:
+    _render_step3()

@@ -28,11 +28,40 @@ UI: dict[Lang, dict[str, str]] = {
             "to Streamlit secrets (Settings → Secrets) or to a `.env` file."
         ),
 
-        # ── Tabs ─────────────────────────────────────────────────────────
+        # ── Tabs (legacy — unused since the Atlas 3-step redesign, kept in
+        # case anything still references them) ─────────────────────────────
         "tab_guide": "📘 How to Use",
         "tab_input": "📤 Input",
         "tab_analysis": "🔍 CV Analysis",
         "tab_results": "✨ Results",
+
+        # ── Atlas shell (top bar + stepper) ─────────────────────────────────
+        "credits_pill": "{remaining} generations left",
+        "stepper_step1": "Import",
+        "stepper_step2": "Analysis",
+        "stepper_step3": "Results",
+        "wizard_back": "← Back",
+        "wizard_view_results": "View results  →",
+
+        # ── Step 1 — Import ──────────────────────────────────────────────
+        "step1_title": "Optimize your CV for the job you want.",
+        "step1_subtitle": (
+            "Drop your CV and, optionally, the job posting. In return: an "
+            "ATS-optimized CV, a cover letter, and a detailed analysis."
+        ),
+        "step1_cv_zone_title": "Your CV",
+        "step1_job_zone_title": "Job description",
+        "step1_job_zone_subtitle": "Optional",
+        "step1_paste_instead": "Or paste text instead",
+        "step1_anonymize_label": "Anonymize my data",
+        "recommended_badge": "recommended",
+        "step1_output_lang_label": "Output language",
+        "step1_advanced_label": "⚙️ Advanced options",
+        "step1_cta": "Analyze my CV  →",
+        "step1_disclaimer": (
+            "AI-generated content can contain mistakes — review and validate "
+            "before sending it to an employer."
+        ),
 
         # ── Input tab ────────────────────────────────────────────────────
         "input_cv_subheader": "Your CV",
@@ -165,11 +194,41 @@ UI: dict[Lang, dict[str, str]] = {
             "dans les secrets Streamlit (Settings → Secrets) ou dans un fichier `.env`."
         ),
 
-        # ── Tabs ─────────────────────────────────────────────────────────
+        # ── Tabs (legacy — non utilisé depuis la refonte Atlas en 3 étapes,
+        # conservé au cas où) ────────────────────────────────────────────
         "tab_guide": "📘 Comment utiliser",
         "tab_input": "📤 Entrée",
         "tab_analysis": "🔍 Analyse du CV",
         "tab_results": "✨ Résultats",
+
+        # ── Coque Atlas (barre du haut + stepper) ───────────────────────────
+        "credits_pill": "{remaining} générations restantes",
+        "stepper_step1": "Importer",
+        "stepper_step2": "Analyse",
+        "stepper_step3": "Résultats",
+        "wizard_back": "← Retour",
+        "wizard_view_results": "Voir les résultats  →",
+
+        # ── Étape 1 — Importer ───────────────────────────────────────────
+        "step1_title": "Optimisez votre CV pour l'offre visée.",
+        "step1_subtitle": (
+            "Déposez votre CV et l'offre d'emploi. En retour : un CV optimisé "
+            "pour les filtres ATS, une lettre de motivation et une analyse "
+            "détaillée."
+        ),
+        "step1_cv_zone_title": "Votre CV",
+        "step1_job_zone_title": "Offre d'emploi",
+        "step1_job_zone_subtitle": "Optionnel",
+        "step1_paste_instead": "Ou coller le texte",
+        "step1_anonymize_label": "Anonymiser mes données",
+        "recommended_badge": "recommandé",
+        "step1_output_lang_label": "Langue de sortie",
+        "step1_advanced_label": "⚙️ Options avancées",
+        "step1_cta": "Analyser mon CV  →",
+        "step1_disclaimer": (
+            "Le contenu généré par IA peut comporter des erreurs — relisez et "
+            "validez avant tout envoi à un employeur."
+        ),
 
         # ── Input tab ────────────────────────────────────────────────────
         "input_cv_subheader": "Votre CV",

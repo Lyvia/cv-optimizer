@@ -106,7 +106,7 @@ def _all_rendered_text(at: AppTest) -> str:
 
 def _generate(at: AppTest):
     at.text_area[0].set_value(SAMPLE_CV)
-    next(b for b in at.button if "Generate" in b.label).click()
+    next(b for b in at.button if b.key == "generate_btn").click()
     at.run()
 
 

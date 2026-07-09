@@ -38,4 +38,5 @@ htmlcov/
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
 *.log
-.streamlit/
+# Note: .streamlit/config.toml (Atlas theme) is intentionally NOT ignored —
+# it must ship with the app. Only secrets.toml above is excluded.

@@ -1,5 +1,7 @@
 # ── Core UI ───────────────────────────────────────────────────────────────────
-streamlit>=1.35.0
+# >=1.38.0: the Atlas theme (src/styles.py) scopes CSS to specific containers
+# and buttons via the st-key-<key> class, added in Streamlit 1.38.
+streamlit>=1.38.0
 
 # ── Document parsing ──────────────────────────────────────────────────────────
 pdfplumber>=0.11.0          # PDF text extraction

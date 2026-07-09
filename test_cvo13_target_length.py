@@ -124,7 +124,7 @@ def test_warns_when_llm_does_not_meet_the_one_page_target(monkeypatch):
 
     at.text_area[0].set_value(SAMPLE_INPUT_CV)
     next(r for r in at.radio if r.key == "target_length_choice").set_value("1 page")
-    next(b for b in at.button if "Generate" in b.label).click()
+    next(b for b in at.button if b.key == "generate_btn").click()
     at.run()
 
     assert not at.exception
@@ -141,7 +141,7 @@ def test_no_warning_when_match_original_length_is_selected(monkeypatch):
     at.run()
 
     at.text_area[0].set_value(SAMPLE_INPUT_CV)
-    next(b for b in at.button if "Generate" in b.label).click()
+    next(b for b in at.button if b.key == "generate_btn").click()
     at.run()
 
     assert not at.exception

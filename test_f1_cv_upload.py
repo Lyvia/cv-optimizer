@@ -171,7 +171,7 @@ def test_tc06_password_protected_pdf_shows_friendly_error_in_app(monkeypatch):
     cv_uploader.upload("protected.pdf", b"%PDF-1.4 fake encrypted body", "application/pdf")
     at.run()
 
-    generate_button = next(b for b in at.button if "Generate" in b.label)
+    generate_button = next(b for b in at.button if b.key == "generate_btn")
     generate_button.click()
     at.run()
 
@@ -190,7 +190,7 @@ def test_tc05_submit_without_cv_shows_validation_and_never_calls_llm():
     at.run()
 
     # No file uploaded, no text pasted — submit immediately.
-    generate_button = next(b for b in at.button if "Generate" in b.label)
+    generate_button = next(b for b in at.button if b.key == "generate_btn")
     generate_button.click()
     at.run()
 

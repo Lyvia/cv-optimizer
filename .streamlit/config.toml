@@ -1,0 +1,12 @@
+# Atlas theme — base tokens for native Streamlit widgets (buttons, toggles,
+# inputs). Fine-grained details (radii, paddings, the app "card" shell) are
+# layered on top via src/styles.py's atlas_css(), injected in app.py.
+[theme]
+primaryColor = "#1E6F57"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F8F6F1"
+textColor = "#1C1B18"
+font = "sans serif"
+
+[server]
+headless = true
