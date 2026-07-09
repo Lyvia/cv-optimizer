@@ -986,22 +986,32 @@ def _run_cv_and_letter_generation():
 
     progress = st.progress(0, text=tr("progress_optimizing"))
     try:
+        # Computed into locals first, session_state written only once both
+        # calls succeed (see the try/except below) -- otherwise a CV that
+        # generates fine followed by a cover-letter call that fails would
+        # leave optimized_cv set but current_cv/current_cl/cover_letter
+        # unset, and Step 2's "already generated, just navigate" check
+        # (keyed on optimized_cv alone) would send the user to Step 3 with
+        # no current_cv to render, crashing the preview.
         raw_opt = strip_fences(llm.generate(
             system="You are an expert CV writer and ATS specialist.",
             user=prompt_builder.optimize_cv(cv_for_llm, job_content, target_pages=target_pages),
             max_tokens=8000,
         ))
-        st.session_state.optimized_cv, st.session_state.changes = _split_cv_and_changes(raw_opt)
+        optimized_cv, changes = _split_cv_and_changes(raw_opt)
 
         progress.progress(60, text=tr("progress_writing_letter"))
-        st.session_state.cover_letter = strip_fences(llm.generate(
+        cover_letter = strip_fences(llm.generate(
             system="You are an expert at writing compelling cover letters.",
             user=prompt_builder.cover_letter(cv_for_llm, job_content),
             max_tokens=3000,
         ))
 
-        st.session_state.current_cv = st.session_state.optimized_cv
-        st.session_state.current_cl = st.session_state.cover_letter
+        st.session_state.optimized_cv = optimized_cv
+        st.session_state.changes = changes
+        st.session_state.cover_letter = cover_letter
+        st.session_state.current_cv = optimized_cv
+        st.session_state.current_cl = cover_letter
 
         progress.progress(100, text=tr("progress_done"))
         st.session_state.generated = True
@@ -1065,7 +1075,17 @@ def _render_step2():
         _render_score_hero(parsed)
 
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-    already_generated = bool(st.session_state.optimized_cv)
+    # Checks current_cv/current_cl (what Step 3 actually renders), not just
+    # optimized_cv -- a run where the CV call succeeded but the cover-letter
+    # call then failed used to leave optimized_cv set without current_cv/
+    # current_cl, so this check (keyed on optimized_cv alone) would treat it
+    # as "done, just navigate" and send the user to a Step 3 with nothing to
+    # render. _run_cv_and_letter_generation() now only ever commits all of
+    # these together, but this stays as a second line of defense.
+    already_generated = bool(
+        st.session_state.optimized_cv and st.session_state.current_cv
+        and st.session_state.cover_letter and st.session_state.current_cl
+    )
     col_back, col_next = st.columns(2)
     with col_back:
         if st.button(tr("wizard_back"), use_container_width=True, key="step2_back"):
@@ -1142,7 +1162,13 @@ def _render_step3():
             getattr(st, level)(msg)
         st.session_state.generation_notices = []
 
-    if not st.session_state.optimized_cv:
+    # current_cv/current_cl are what this step actually renders (style
+    # preview, downloads) -- checked here too, not just optimized_cv, as a
+    # last line of defense against a leftover inconsistent session (e.g. a
+    # session still open from before this guard existed) where the CV call
+    # once succeeded but the cover-letter call then failed.
+    if not (st.session_state.optimized_cv and st.session_state.current_cv
+            and st.session_state.cover_letter and st.session_state.current_cl):
         st.info(tr("results_empty_hint"))
         if st.button(tr("wizard_back"), key="step3_back"):
             st.session_state.wizard_step = 1
