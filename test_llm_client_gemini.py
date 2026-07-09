@@ -232,6 +232,46 @@ def test_both_models_retired_raises_clear_actionable_error(monkeypatch):
     assert [c[0] for c in calls] == ["gemini-3.5-flash", "gemini-3.1-flash-lite"]
 
 
+# ─── Fallback-on-overloaded-model logic (503 UNAVAILABLE / "high demand" -- ─
+# a different model is often not under the same load spike, so it's worth
+# one fallback attempt before giving up) ────────────────────────────────────
+
+def test_fallback_to_flash_lite_when_primary_model_is_overloaded(monkeypatch):
+    calls = []
+    _install_fake_genai(
+        monkeypatch,
+        {
+            "gemini-3.5-flash": _FakeAPIError(
+                503, "This model is currently experiencing high demand."
+            ),
+            "gemini-3.1-flash-lite": "Recovered via fallback",
+        },
+        calls,
+    )
+
+    result = _client("gemini-3.5-flash").generate(system="sys", user="hello", max_tokens=1000)
+
+    assert result == "Recovered via fallback"
+    assert [c[0] for c in calls] == ["gemini-3.5-flash", "gemini-3.1-flash-lite"]
+
+
+def test_both_models_overloaded_raises_clear_transient_error(monkeypatch):
+    calls = []
+    _install_fake_genai(
+        monkeypatch,
+        {
+            "gemini-3.5-flash": _FakeAPIError(503, "UNAVAILABLE: high demand"),
+            "gemini-3.1-flash-lite": _FakeAPIError(503, "UNAVAILABLE: high demand"),
+        },
+        calls,
+    )
+
+    with pytest.raises(RuntimeError, match="temporarily overloaded"):
+        _client("gemini-3.5-flash").generate(system="sys", user="hello", max_tokens=1000)
+
+    assert [c[0] for c in calls] == ["gemini-3.5-flash", "gemini-3.1-flash-lite"]
+
+
 # ─── Auth errors fail fast, no wasted fallback attempt ─────────────────────
 
 def test_auth_error_does_not_trigger_fallback(monkeypatch):

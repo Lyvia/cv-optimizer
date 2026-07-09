@@ -156,12 +156,18 @@ class LLMClient:
         client = genai.Client(api_key=self.api_key)
 
         # Try the configured model first, then fall back to a more generous
-        # free-tier model on quota errors OR when a model has been retired
-        # (Google periodically shuts down old model IDs -- e.g. gemini-2.5-
-        # flash-lite returning 404 NOT_FOUND once it was decommissioned --
-        # and that's exactly as unrecoverable by retrying the same model as
-        # a quota error, so it gets the same fallback treatment). Auth/other
-        # errors won't be fixed by switching models, so they fail fast.
+        # free-tier model on quota errors, when a model has been retired, or
+        # when a model is temporarily overloaded server-side:
+        # - 429 quota exceeded
+        # - 404 retired (e.g. gemini-2.5-flash-lite returning NOT_FOUND once
+        #   Google decommissioned it)
+        # - 503 UNAVAILABLE ("currently experiencing high demand") -- a
+        #   different model is often not under the same load spike, so
+        #   trying it is worth one attempt before giving up
+        # All three are exactly as unrecoverable by retrying the *same*
+        # model as each other, so they all get the same fallback treatment.
+        # Auth/other errors won't be fixed by switching models, so they
+        # fail fast instead.
         models_to_try = [self.model]
         if self.model != self._GEMINI_FALLBACK_MODEL:
             models_to_try.append(self._GEMINI_FALLBACK_MODEL)
@@ -191,8 +197,11 @@ class LLMClient:
                     code == 404 or "404" in err or "not_found" in err
                     or "no longer available" in err or "not found" in err
                 )
+                is_overloaded_error = (
+                    code == 503 or "503" in err or "unavailable" in err or "high demand" in err
+                )
                 is_last_attempt = attempt == len(models_to_try) - 1
-                if (is_quota_error or is_model_unavailable) and not is_last_attempt:
+                if (is_quota_error or is_model_unavailable or is_overloaded_error) and not is_last_attempt:
                     continue
                 break
 
@@ -214,6 +223,11 @@ class LLMClient:
                 f"All configured Gemini models are unavailable ({tried}) -- Google may have "
                 "retired them. Update PROVIDERS['Google (Gemini)']['models'] in "
                 "src/llm_client.py to current model IDs from https://ai.google.dev/gemini-api/docs/models."
+            )
+        if code == 503 or "503" in err or "unavailable" in err or "high demand" in err:
+            raise RuntimeError(
+                f"Gemini is temporarily overloaded on all available models ({tried}). "
+                "This is on Google's end, not your quota -- wait a minute and try again."
             )
         raise RuntimeError(f"Gemini API error: {last_error}")
 
