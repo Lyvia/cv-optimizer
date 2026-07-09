@@ -534,7 +534,7 @@ def _load_config() -> tuple[str, str, str]:
 
     # Try each provider in order of preference (free first)
     candidates = [
-        ("GOOGLE_API_KEY",    "Google (Gemini)",    "gemini-2.5-flash"),
+        ("GOOGLE_API_KEY",    "Google (Gemini)",    "gemini-3.5-flash"),
         ("GROQ_API_KEY",      "Groq (Llama)",       "llama-3.3-70b-versatile"),
         ("ANTHROPIC_API_KEY", "Anthropic (Claude)", "claude-3-5-haiku-20241022"),
     ]

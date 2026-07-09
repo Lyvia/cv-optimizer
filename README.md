@@ -94,12 +94,12 @@ cv-optimizer/
 |---|---|---|---|
 | **Anthropic** | claude-3-5-haiku | ~$0.01 / generation | ❌ |
 | **Anthropic** | claude-3-5-sonnet | ~$0.04 / generation | ❌ |
-| **Google** | gemini-2.5-flash | $0.00 | ✅ rate-limited |
-| **Google** | gemini-2.0-flash | $0.00 | ✅ rate-limited |
+| **Google** | gemini-3.5-flash | $0.00 | ✅ rate-limited |
+| **Google** | gemini-3.1-flash-lite | $0.00 | ✅ rate-limited |
 | **Groq** | llama-3.1-8b | $0.00 | ✅ rate-limited |
 | **Groq** | llama-3.3-70b | $0.00 | ✅ rate-limited |
 
-**Recommendation for zero cost:** Google Gemini 2.5 Flash or Groq Llama 3.3 70B.
+**Recommendation for zero cost:** Google Gemini 3.5 Flash or Groq Llama 3.3 70B.
 **Recommendation for best quality:** Anthropic claude-3-5-sonnet (~€0.04 per full run).
 
 To keep the app sustainable regardless of provider, each browser session is capped at

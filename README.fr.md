@@ -95,12 +95,12 @@ cv-optimizer/
 |---|---|---|---|
 | **Anthropic** | claude-3-5-haiku | ~$0,01 / génération | ❌ |
 | **Anthropic** | claude-3-5-sonnet | ~$0,04 / génération | ❌ |
-| **Google** | gemini-2.5-flash | $0,00 | ✅ avec limite de débit |
-| **Google** | gemini-2.0-flash | $0,00 | ✅ avec limite de débit |
+| **Google** | gemini-3.5-flash | $0,00 | ✅ avec limite de débit |
+| **Google** | gemini-3.1-flash-lite | $0,00 | ✅ avec limite de débit |
 | **Groq** | llama-3.1-8b | $0,00 | ✅ avec limite de débit |
 | **Groq** | llama-3.3-70b | $0,00 | ✅ avec limite de débit |
 
-**Recommandation pour un coût nul :** Google Gemini 2.5 Flash ou Groq Llama 3.3 70B.
+**Recommandation pour un coût nul :** Google Gemini 3.5 Flash ou Groq Llama 3.3 70B.
 **Recommandation pour la meilleure qualité :** Anthropic claude-3-5-sonnet (~0,04€ par génération complète).
 
 Pour rester soutenable quel que soit le fournisseur, chaque session de navigateur est

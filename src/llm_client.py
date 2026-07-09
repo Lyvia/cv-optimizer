@@ -20,9 +20,9 @@ PROVIDERS: dict[str, dict] = {
     },
     "Google (Gemini)": {
         "models": [
-            "gemini-2.5-flash",             # free tier, fast
-            "gemini-2.5-flash-lite",        # free tier, more generous quota
-            "gemini-2.5-pro",               # paid, high quality
+            "gemini-3.5-flash",             # free tier, fast
+            "gemini-3.1-flash-lite",        # free tier, more generous quota
+            "gemini-3.1-pro-preview",       # paid, high quality
         ],
         "cost_info": "Flash models have a free tier (rate-limited). Pro is paid.",
         "free": True,
@@ -129,13 +129,13 @@ class LLMClient:
 
     # ── Private: Google Gemini ────────────────────────────────────────────────
 
-    _GEMINI_FALLBACK_MODEL = "gemini-2.5-flash-lite"
+    _GEMINI_FALLBACK_MODEL = "gemini-3.1-flash-lite"
 
     @staticmethod
     def _gemini_thinking_budget(model_name: str) -> int:
         """0 fully disables "thinking" (supported by flash / flash-lite —
         this is what was silently eating the max_output_tokens budget and
-        truncating responses). gemini-2.5-pro requires a minimum non-zero
+        truncating responses). Pro-tier models require a minimum non-zero
         budget and can't have thinking disabled outright."""
         return 128 if "pro" in model_name else 0
 
@@ -156,8 +156,12 @@ class LLMClient:
         client = genai.Client(api_key=self.api_key)
 
         # Try the configured model first, then fall back to a more generous
-        # free-tier model on quota errors only (auth/other errors won't be
-        # fixed by switching models, so they fail fast instead).
+        # free-tier model on quota errors OR when a model has been retired
+        # (Google periodically shuts down old model IDs -- e.g. gemini-2.5-
+        # flash-lite returning 404 NOT_FOUND once it was decommissioned --
+        # and that's exactly as unrecoverable by retrying the same model as
+        # a quota error, so it gets the same fallback treatment). Auth/other
+        # errors won't be fixed by switching models, so they fail fast.
         models_to_try = [self.model]
         if self.model != self._GEMINI_FALLBACK_MODEL:
             models_to_try.append(self._GEMINI_FALLBACK_MODEL)
@@ -183,23 +187,33 @@ class LLMClient:
                 code = self._gemini_error_code(e)
                 err = str(e).lower()
                 is_quota_error = code == 429 or "429" in err or "quota" in err or "resource exhausted" in err
+                is_model_unavailable = (
+                    code == 404 or "404" in err or "not_found" in err
+                    or "no longer available" in err or "not found" in err
+                )
                 is_last_attempt = attempt == len(models_to_try) - 1
-                if is_quota_error and not is_last_attempt:
+                if (is_quota_error or is_model_unavailable) and not is_last_attempt:
                     continue
                 break
 
         code = self._gemini_error_code(last_error)
         err = str(last_error).lower()
+        tried = ", ".join(models_to_try)
         if code in (401, 403) or "api_key" in err or "invalid" in err or "403" in err:
             raise RuntimeError(
                 "Invalid Google API key. "
                 "Generate one at https://aistudio.google.com/app/apikey"
             )
         if code == 429 or "429" in err or "quota" in err or "resource exhausted" in err:
-            tried = ", ".join(models_to_try)
             raise RuntimeError(
                 f"Gemini quota exceeded on all available models ({tried}). "
                 "Wait a few minutes and try again, or check https://ai.dev/rate-limit."
+            )
+        if code == 404 or "404" in err or "not_found" in err or "no longer available" in err or "not found" in err:
+            raise RuntimeError(
+                f"All configured Gemini models are unavailable ({tried}) -- Google may have "
+                "retired them. Update PROVIDERS['Google (Gemini)']['models'] in "
+                "src/llm_client.py to current model IDs from https://ai.google.dev/gemini-api/docs/models."
             )
         raise RuntimeError(f"Gemini API error: {last_error}")
 
