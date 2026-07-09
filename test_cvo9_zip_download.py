@@ -102,9 +102,39 @@ def _install_fake_genai(monkeypatch):
     monkeypatch.setitem(sys.modules, "google.genai.types", fake_types)
 
 
+def _defuse_step1_ghost_widgets(at: AppTest):
+    """Works around a Streamlit AppTest limitation (not a real app bug):
+    Step 1's generate_btn handler renders the whole Step 1 form (including
+    the output-language Selectbox and the target-length Radio) and *then*
+    calls st.rerun() to jump to Step 2. That rerun aborts the in-progress
+    script pass, but AppTest's element tree still carries those two
+    Selectbox/Radio nodes over as unresolved ("ghost") entries for one more
+    run. Real Streamlit prunes their session_state entry once they stop
+    being rendered, so the next .run() call crashes with a KeyError while
+    serializing that ghost node's value -- confirmed real-browser use (via
+    Playwright) has no such issue, since the frontend always reports full
+    widget state. Writing a concrete value directly into session_state
+    resolves the ghost before it's serialized again."""
+    for key, val in [
+        ("output_language_select", "English"),
+        ("target_length_choice", "Match original length"),
+    ]:
+        try:
+            at.session_state[key] = val
+        except Exception:
+            pass
+
+
 def _generate(at: AppTest):
+    """Runs both generation stages: Step 1's analysis click, then Step 2's
+    CV + cover-letter click -- the Atlas redesign split the old single
+    Generate click into these two user-triggered steps (see app.py's
+    _render_step1()/_render_step2())."""
     at.text_area[0].set_value(SAMPLE_CV)
     next(b for b in at.button if b.key == "generate_btn").click()
+    at.run()
+    _defuse_step1_ghost_widgets(at)
+    next(b for b in at.button if b.key == "step2_next").click()
     at.run()
 
 

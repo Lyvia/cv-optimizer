@@ -206,6 +206,13 @@ body, .stMarkdown p, .stMarkdown li, .stMarkdown span, label, .stCaption {
     border-radius: 12px;
     font-weight: 600;
 }
+
+/* ── Step 2 — priority actions panel ── */
+.st-key-atlas_actions_panel {
+    background: var(--atlas-surface-soft);
+    border-radius: 14px;
+    padding: 22px 24px;
+}
 </style>
 """
 
@@ -215,3 +222,23 @@ def inject_atlas_theme() -> str:
     to be passed to st.markdown(..., unsafe_allow_html=True) once near the
     top of app.py."""
     return ATLAS_FONTS_HTML + ATLAS_CSS
+
+
+def score_ring_html(score: int, score_label: str) -> str:
+    """The Step 2 score-hero ring: a conic-gradient track filled to `score`
+    percent, with the number centered on a white disc on top. Pure decor,
+    no interactive children -- safe to render as one self-contained
+    st.markdown(..., unsafe_allow_html=True) block."""
+    pct = max(0, min(100, score))
+    return f"""
+<div style="width:128px;height:128px;border-radius:50%;flex:none;
+    background:conic-gradient(var(--atlas-accent) 0 {pct}%, #E7E3DA {pct}% 100%);
+    display:flex;align-items:center;justify-content:center">
+  <div style="width:100px;height:100px;border-radius:50%;background:#fff;
+      display:flex;flex-direction:column;align-items:center;justify-content:center">
+    <span class="atlas-serif" style="font-size:40px;font-weight:600;line-height:1">{pct}</span>
+    <span style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+        color:var(--atlas-faint);margin-top:3px">{score_label}</span>
+  </div>
+</div>
+"""

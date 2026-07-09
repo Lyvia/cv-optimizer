@@ -116,6 +116,29 @@ def _install_fake_genai(monkeypatch):
     monkeypatch.setitem(sys.modules, "google.genai.types", fake_types)
 
 
+def _defuse_step1_ghost_widgets(at: AppTest):
+    """Works around a Streamlit AppTest limitation (not a real app bug):
+    Step 1's generate_btn handler renders the whole Step 1 form (including
+    the output-language Selectbox and the target-length Radio) and *then*
+    calls st.rerun() to jump to Step 2. That rerun aborts the in-progress
+    script pass, but AppTest's element tree still carries those two
+    Selectbox/Radio nodes over as unresolved ("ghost") entries for one more
+    run. Real Streamlit prunes their session_state entry once they stop
+    being rendered, so the next .run() call crashes with a KeyError while
+    serializing that ghost node's value -- confirmed real-browser use (via
+    Playwright) has no such issue, since the frontend always reports full
+    widget state. Writing a concrete value directly into session_state
+    resolves the ghost before it's serialized again."""
+    for key, val in [
+        ("output_language_select", "English"),
+        ("target_length_choice", "Match original length"),
+    ]:
+        try:
+            at.session_state[key] = val
+        except Exception:
+            pass
+
+
 def test_warns_when_llm_does_not_meet_the_one_page_target(monkeypatch):
     _install_fake_genai(monkeypatch)
 
@@ -125,6 +148,12 @@ def test_warns_when_llm_does_not_meet_the_one_page_target(monkeypatch):
     at.text_area[0].set_value(SAMPLE_INPUT_CV)
     next(r for r in at.radio if r.key == "target_length_choice").set_value("1 page")
     next(b for b in at.button if b.key == "generate_btn").click()
+    at.run()
+    # Atlas redesign: Step 1 only runs the analysis; the CV (and the
+    # length-overflow check that depends on it) is generated from Step 2's
+    # CTA -- see app.py's _render_step2()/_run_cv_and_letter_generation().
+    _defuse_step1_ghost_widgets(at)
+    next(b for b in at.button if b.key == "step2_next").click()
     at.run()
 
     assert not at.exception
@@ -142,6 +171,9 @@ def test_no_warning_when_match_original_length_is_selected(monkeypatch):
 
     at.text_area[0].set_value(SAMPLE_INPUT_CV)
     next(b for b in at.button if b.key == "generate_btn").click()
+    at.run()
+    _defuse_step1_ghost_widgets(at)
+    next(b for b in at.button if b.key == "step2_next").click()
     at.run()
 
     assert not at.exception

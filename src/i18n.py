@@ -62,6 +62,25 @@ UI: dict[Lang, dict[str, str]] = {
             "AI-generated content can contain mistakes — review and validate "
             "before sending it to an employer."
         ),
+        "analysis_ready_notice": "✅ Analysis ready — here's where your CV stands.",
+
+        # ── Step 2 — Analyse ─────────────────────────────────────────────
+        "score_label": "score / 100",
+        "score_headline_excellent": "Excellent match",
+        "score_headline_good": "Good match, room to refine",
+        "score_headline_partial": "Partial match",
+        "score_headline_weak": "Significant gaps to address",
+        "score_headline_none": "Analysis ready",
+        "score_subline_with_job": "Analyzed against the job description you provided.",
+        "score_subline_no_job": "General analysis — no job description was provided.",
+        "ats_status_readable": "✓ Overall ATS-readable",
+        "ats_status_no_issues": "✓ No ATS issues found",
+        "ats_status_issues": "{count} ATS issue(s)",
+        "strengths_heading": "Strengths",
+        "gaps_heading": "Gaps to close",
+        "actions_heading": "Top 5 priority actions",
+        "step2_cta": "Generate the optimized CV  →",
+        "step2_cta_disabled_hint": "Run the analysis in the Import step first.",
 
         # ── Input tab ────────────────────────────────────────────────────
         "input_cv_subheader": "Your CV",
@@ -229,6 +248,25 @@ UI: dict[Lang, dict[str, str]] = {
             "Le contenu généré par IA peut comporter des erreurs — relisez et "
             "validez avant tout envoi à un employeur."
         ),
+        "analysis_ready_notice": "✅ Analyse prête — voici où en est votre CV.",
+
+        # ── Étape 2 — Analyse ─────────────────────────────────────────────
+        "score_label": "score / 100",
+        "score_headline_excellent": "Excellent alignement",
+        "score_headline_good": "Bon alignement, à affiner",
+        "score_headline_partial": "Alignement partiel",
+        "score_headline_weak": "Écarts importants à combler",
+        "score_headline_none": "Analyse prête",
+        "score_subline_with_job": "Analysé par rapport à la fiche de poste fournie.",
+        "score_subline_no_job": "Analyse générale — aucune fiche de poste fournie.",
+        "ats_status_readable": "✓ Globalement lisible par l'ATS",
+        "ats_status_no_issues": "✓ Aucun problème ATS détecté",
+        "ats_status_issues": "{count} problème(s) ATS",
+        "strengths_heading": "Forces",
+        "gaps_heading": "Écarts à combler",
+        "actions_heading": "5 actions prioritaires",
+        "step2_cta": "Générer le CV optimisé  →",
+        "step2_cta_disabled_hint": "Lancez d'abord l'analyse dans l'étape Importer.",
 
         # ── Input tab ────────────────────────────────────────────────────
         "input_cv_subheader": "Votre CV",

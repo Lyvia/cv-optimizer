@@ -22,6 +22,7 @@ from src.utils import strip_fences
 from src.differ import compute_diff, rebuild_text
 from src import styles
 from src.styles import StyleConfig
+from src.analysis_parser import parse_analysis
 from src.preview import render_preview_html
 from src.i18n import t as i18n_t
 
@@ -106,6 +107,8 @@ def _init_state():
         "ui_lang": "en",
         "cv_content": None,
         "job_content": None,
+        "cv_for_llm": None,
+        "target_pages": None,
         "ai_calls_used": 0,
         "style_config": styles.DEFAULT_STYLE,
         "current_cv": None,
@@ -800,8 +803,25 @@ def _render_step1():
         st.session_state.llm = llm
         st.session_state.cv_content = cv_content
         st.session_state.job_content = job_content
+        # Persisted for Step 2's CTA, which runs the CV + cover-letter calls
+        # (see _render_step2()) -- that screen has no file/job inputs of its
+        # own, so it reuses exactly what was sent to the LLM here.
+        st.session_state.cv_for_llm = cv_for_llm
 
-        # Reset refine/diff state on a fresh generation
+        if target_length_choice == tr("target_length_1page"):
+            st.session_state.target_pages = 1
+        elif target_length_choice == tr("target_length_2page"):
+            st.session_state.target_pages = 2
+        else:
+            st.session_state.target_pages = None
+
+        # Reset refine/diff state and any previous results on a fresh analysis
+        st.session_state.optimized_cv = None
+        st.session_state.changes = None
+        st.session_state.cover_letter = None
+        st.session_state.current_cv = None
+        st.session_state.current_cl = None
+        st.session_state.generated = False
         st.session_state.cv_pending_diff = None
         st.session_state.cv_pending_change_note = None
         st.session_state.cv_diff_round = 0
@@ -813,82 +833,25 @@ def _render_step1():
         st.session_state.ai_calls_used += 1
         quota_caption.caption(_quota_caption_text())
 
-        # ── Generate
-        progress = st.progress(0, text=tr("progress_starting"))
+        # ── Generate — analysis only. CV + cover letter are generated from
+        # Step 2's CTA once the user has seen the score (see _render_step2()).
+        progress = st.progress(0, text=tr("progress_analyzing"))
 
         try:
-            progress.progress(10, text=tr("progress_analyzing"))
             st.session_state.analysis = strip_fences(llm.generate(
                 system="You are an HR expert and ATS specialist with 15 years of experience.",
                 user=prompt_builder.analysis(cv_for_llm, job_content),
                 max_tokens=4000,
             ))
-
-            if target_length_choice == tr("target_length_1page"):
-                target_pages = 1
-            elif target_length_choice == tr("target_length_2page"):
-                target_pages = 2
-            else:
-                target_pages = None
-
-            progress.progress(45, text=tr("progress_optimizing"))
-            raw_opt = strip_fences(llm.generate(
-                system="You are an expert CV writer and ATS specialist.",
-                user=prompt_builder.optimize_cv(cv_for_llm, job_content, target_pages=target_pages),
-                max_tokens=8000,
-            ))
-            st.session_state.optimized_cv, st.session_state.changes = _split_cv_and_changes(raw_opt)
-
-            progress.progress(80, text=tr("progress_writing_letter"))
-            st.session_state.cover_letter = strip_fences(llm.generate(
-                system="You are an expert at writing compelling cover letters.",
-                user=prompt_builder.cover_letter(cv_for_llm, job_content),
-                max_tokens=3000,
-            ))
-
-            st.session_state.current_cv = st.session_state.optimized_cv
-            st.session_state.current_cl = st.session_state.cover_letter
-
             progress.progress(100, text=tr("progress_done"))
-            st.session_state.generated = True
 
-            # These render on the Results step, not here: the immediate
-            # st.rerun() below discards whatever was drawn in this pass, so
-            # a plain st.success()/st.warning() call right here would never
-            # actually be seen. Queue them and flush once at the top of
-            # _render_step3() instead (the "flash message across a rerun"
-            # pattern) -- same idea as show_accept_warning_once above.
-            st.session_state.generation_notices.append(("success", tr("generation_success")))
-
-            # Prompt-level length budgets are best-effort (the LLM can still
-            # overshoot) -- verify the actual rendered PDF against the
-            # chosen target_pages and say so plainly rather than silently
-            # serving a CV that doesn't meet it (no extra LLM call: PDF
-            # rendering + page counting is local and free).
-            if target_pages is not None:
-                try:
-                    check_pdf = PDFExporter().cv_to_pdf(
-                        st.session_state.current_cv, style=st.session_state.style_config
-                    )
-                    with pdfplumber.open(io.BytesIO(check_pdf)) as pdf:
-                        actual_pages = len(pdf.pages)
-                    if actual_pages > target_pages:
-                        st.session_state.generation_notices.append((
-                            "warning",
-                            tr("target_length_overflow_warning").format(
-                                actual=actual_pages, target=target_pages
-                            ),
-                        ))
-                except Exception:
-                    pass
-
-            # Bridging behavior for this pass: one click still runs all 3 LLM
-            # calls (analysis + CV + letter), same as the old single-Generate
-            # flow -- so jump straight to the Results step. Splitting this
-            # into "analyze on step 1→2" / "generate docs on step 2→3" is
-            # deferred to the Step 2 (Analyse) pass, once that screen has its
-            # own real trigger and the score-hero UI to land on.
-            st.session_state.wizard_step = 3
+            # Renders on Step 2, not here -- see _render_step2()'s flush of
+            # generation_notices (the "flash message across a rerun"
+            # pattern, same idea as show_accept_warning_once above): the
+            # st.rerun() right below would otherwise discard this message
+            # before anyone sees it.
+            st.session_state.generation_notices.append(("success", tr("analysis_ready_notice")))
+            st.session_state.wizard_step = 2
             st.rerun()
 
         except Exception as e:
@@ -897,33 +860,221 @@ def _render_step1():
             st.info(tr("generation_error_hint"))
 
 
-# ─── Step 2 — Analyse (bridging: old content, new shell; full Atlas ──────────
-# treatment — score ring, forces/gaps, 5 actions — is the next pass) ─────────
+# ─── Step 2 — Analyse ──────────────────────────────────────────────────────────
 
-def _render_step2():
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _inline_md(text: str) -> str:
+    """Escape, then re-enable **bold** -- the analysis prompt's gap/action
+    items sometimes use it (e.g. "**Missing keywords**: ..."); without this
+    the literal asterisks would show up in the plain-text bullet list."""
+    return _BOLD_RE.sub(r"<strong>\1</strong>", html.escape(text))
+
+
+def _score_headline(score: int) -> str:
+    if score >= 85:
+        return tr("score_headline_excellent")
+    if score >= 70:
+        return tr("score_headline_good")
+    if score >= 50:
+        return tr("score_headline_partial")
+    return tr("score_headline_weak")
+
+
+def _render_score_hero(parsed):
+    has_job = bool((st.session_state.job_content or "").strip())
+    subline = tr("score_subline_with_job") if has_job else tr("score_subline_no_job")
+
+    ats_count = len(parsed.ats_issues)
+    if ats_count > 0:
+        pill2_text = tr("ats_status_issues").format(count=ats_count)
+        pill2_bg, pill2_fg = "var(--atlas-alert-tint)", "var(--atlas-alert)"
+    else:
+        pill2_text = tr("ats_status_no_issues")
+        pill2_bg, pill2_fg = "var(--atlas-accent-tint)", "var(--atlas-accent)"
+
+    col_ring, col_text = st.columns([1, 2.4])
+    with col_ring:
+        st.markdown(styles.score_ring_html(parsed.score, tr("score_label")), unsafe_allow_html=True)
+    with col_text:
+        st.markdown(
+            f"<div class='atlas-serif' style='font-size:26px;font-weight:500;"
+            f"letter-spacing:-.01em;margin-bottom:5px'>{html.escape(_score_headline(parsed.score))}</div>"
+            f"<p style='margin:0 0 12px;font-size:14px;line-height:1.45;color:var(--atlas-muted)'>"
+            f"{html.escape(subline)}</p>"
+            "<div style='display:flex;gap:8px;flex-wrap:wrap'>"
+            "<span style='font-size:11.5px;font-weight:600;background:var(--atlas-accent-tint);"
+            f"color:var(--atlas-accent);border-radius:20px;padding:5px 12px'>{html.escape(tr('ats_status_readable'))}</span>"
+            f"<span style='font-size:11.5px;font-weight:600;background:{pill2_bg};"
+            f"color:{pill2_fg};border-radius:20px;padding:5px 12px'>{html.escape(pill2_text)}</span>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
     st.markdown(
-        f"<h2 class='atlas-serif' style='margin:0 0 18px;font-size:26px;font-weight:500'>"
-        f"{tr('stepper_step2')}</h2>",
+        "<div style='border-bottom:1px solid var(--atlas-border);margin:22px 0 24px'></div>",
         unsafe_allow_html=True,
     )
-    if st.session_state.analysis:
+
+    def _bullet_list(items: list[str]) -> str:
+        return "".join(f"<div>· {_inline_md(i)}</div>" for i in items) or "—"
+
+    col_strengths, col_gaps = st.columns(2)
+    with col_strengths:
+        st.markdown(
+            "<div style=\"font:600 10.5px 'Public Sans';letter-spacing:.14em;text-transform:uppercase;"
+            f"color:var(--atlas-accent);margin-bottom:13px\">{html.escape(tr('strengths_heading'))}</div>"
+            "<div style='font-size:13.5px;line-height:1.5;color:var(--atlas-text);"
+            f"display:flex;flex-direction:column;gap:10px'>{_bullet_list(parsed.strengths)}</div>",
+            unsafe_allow_html=True,
+        )
+    with col_gaps:
+        st.markdown(
+            "<div style=\"font:600 10.5px 'Public Sans';letter-spacing:.14em;text-transform:uppercase;"
+            f"color:var(--atlas-alert);margin-bottom:13px\">{html.escape(tr('gaps_heading'))}</div>"
+            "<div style='font-size:13.5px;line-height:1.5;color:var(--atlas-text);"
+            f"display:flex;flex-direction:column;gap:10px'>{_bullet_list(parsed.gaps)}</div>",
+            unsafe_allow_html=True,
+        )
+
+    if parsed.top_actions:
+        st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+        with st.container(key="atlas_actions_panel"):
+            st.markdown(
+                "<div style=\"font:600 10.5px 'Public Sans';letter-spacing:.14em;text-transform:uppercase;"
+                f"color:var(--atlas-muted);margin-bottom:15px\">{html.escape(tr('actions_heading'))}</div>",
+                unsafe_allow_html=True,
+            )
+            rows = [
+                "<div style='display:flex;gap:11px'>"
+                "<span style='flex:none;width:21px;height:21px;border-radius:50%;background:var(--atlas-accent);"
+                "color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;"
+                f"justify-content:center'>{i}</span> {_inline_md(action)}</div>"
+                for i, action in enumerate(parsed.top_actions[:5], start=1)
+            ]
+            st.markdown(
+                "<div style='display:flex;flex-direction:column;gap:12px;font-size:13.5px;"
+                f"line-height:1.4;color:var(--atlas-text)'>{''.join(rows)}</div>",
+                unsafe_allow_html=True,
+            )
+
+
+def _run_cv_and_letter_generation():
+    """Step 2's CTA: generate the optimized CV + cover letter from the CV
+    text and settings captured back in Step 1. No extra quota charge here
+    -- the whole analyze-then-generate flow still costs 1 AI-generations
+    unit total, same as the old single-click flow, just split across two
+    user actions to match the guided narrative (charged once, at Step 1's
+    analysis click)."""
+    llm = st.session_state.llm
+    prompt_builder = PromptBuilder(language=st.session_state.language)
+    cv_for_llm = st.session_state.cv_for_llm
+    job_content = st.session_state.job_content or ""
+    target_pages = st.session_state.target_pages
+
+    progress = st.progress(0, text=tr("progress_optimizing"))
+    try:
+        raw_opt = strip_fences(llm.generate(
+            system="You are an expert CV writer and ATS specialist.",
+            user=prompt_builder.optimize_cv(cv_for_llm, job_content, target_pages=target_pages),
+            max_tokens=8000,
+        ))
+        st.session_state.optimized_cv, st.session_state.changes = _split_cv_and_changes(raw_opt)
+
+        progress.progress(60, text=tr("progress_writing_letter"))
+        st.session_state.cover_letter = strip_fences(llm.generate(
+            system="You are an expert at writing compelling cover letters.",
+            user=prompt_builder.cover_letter(cv_for_llm, job_content),
+            max_tokens=3000,
+        ))
+
+        st.session_state.current_cv = st.session_state.optimized_cv
+        st.session_state.current_cl = st.session_state.cover_letter
+
+        progress.progress(100, text=tr("progress_done"))
+        st.session_state.generated = True
+        st.session_state.generation_notices.append(("success", tr("generation_success")))
+
+        # Same best-effort overflow check as before (see the old single-stage
+        # flow this was split from) -- now runs here since this is where the
+        # CV is actually produced.
+        if target_pages is not None:
+            try:
+                check_pdf = PDFExporter().cv_to_pdf(
+                    st.session_state.current_cv, style=st.session_state.style_config
+                )
+                with pdfplumber.open(io.BytesIO(check_pdf)) as pdf:
+                    actual_pages = len(pdf.pages)
+                if actual_pages > target_pages:
+                    st.session_state.generation_notices.append((
+                        "warning",
+                        tr("target_length_overflow_warning").format(
+                            actual=actual_pages, target=target_pages
+                        ),
+                    ))
+            except Exception:
+                pass
+
+        st.session_state.wizard_step = 3
+        st.rerun()
+
+    except Exception as e:
+        progress.empty()
+        st.error(tr("generation_error").format(error=e))
+        st.info(tr("generation_error_hint"))
+
+
+def _render_step2():
+    if st.session_state.generation_notices:
+        for level, msg in st.session_state.generation_notices:
+            getattr(st, level)(msg)
+        st.session_state.generation_notices = []
+
+    if not st.session_state.analysis:
+        st.info(tr("analysis_empty_hint"))
+        if st.button(tr("wizard_back"), key="step2_back_empty"):
+            st.session_state.wizard_step = 1
+            st.rerun()
+        return
+
+    parsed = parse_analysis(st.session_state.analysis)
+
+    if parsed.score is None:
+        # The analysis text didn't match the expected section shape --
+        # degrade to the raw markdown rather than showing a broken/empty
+        # hero (see src/analysis_parser.py's docstring).
+        st.markdown(
+            f"<h2 class='atlas-serif' style='margin:0 0 18px;font-size:26px;font-weight:500'>"
+            f"{tr('stepper_step2')}</h2>",
+            unsafe_allow_html=True,
+        )
         st.markdown(st.session_state.analysis)
     else:
-        st.info(tr("analysis_empty_hint"))
+        _render_score_hero(parsed)
 
-    st.divider()
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    already_generated = bool(st.session_state.optimized_cv)
     col_back, col_next = st.columns(2)
     with col_back:
         if st.button(tr("wizard_back"), use_container_width=True, key="step2_back"):
             st.session_state.wizard_step = 1
             st.rerun()
     with col_next:
-        if st.button(
-            tr("wizard_view_results"), type="primary", use_container_width=True,
-            key="step2_next", disabled=not st.session_state.optimized_cv,
-        ):
+        next_disabled = (not already_generated) and _quota_exhausted()
+        next_clicked = st.button(
+            tr("wizard_view_results") if already_generated else tr("step2_cta"),
+            type="primary", use_container_width=True,
+            key="step2_next", disabled=next_disabled,
+        )
+    if not already_generated and _quota_exhausted():
+        st.error(tr("quota_exhausted_error").format(max=MAX_AI_CALLS_PER_SESSION))
+
+    if next_clicked:
+        if already_generated:
             st.session_state.wizard_step = 3
             st.rerun()
+        else:
+            _run_cv_and_letter_generation()
 
 
 # ─── Step 3 — Résultats (bridging: old content, new shell) ───────────────────
