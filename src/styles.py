@@ -238,14 +238,9 @@ body, .stMarkdown p, .stMarkdown li, .stMarkdown span, label, .stCaption {
     box-shadow: 0 1px 2px rgba(0,0,0,.06);
 }
 
-/* ── Step 3 — style swatches ── */
-.st-key-atlas_swatches .stButton > button {
-    min-height: 0;
-}
-
-/* ── Step 3 — refine-with-AI panels ── */
-.st-key-atlas_refine_cv [data-testid="stExpander"],
-.st-key-atlas_refine_cl [data-testid="stExpander"] {
+/* ── Step 3 — refine-with-AI panels (key= is on the expander itself) ── */
+.st-key-atlas_refine_cv,
+.st-key-atlas_refine_cl {
     background: var(--atlas-surface-soft);
     border-radius: 14px;
     border: none;

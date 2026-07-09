@@ -370,40 +370,40 @@ def _render_cv_subtab(style: StyleConfig):
         )
 
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
-    with st.container(key="atlas_refine_cv"):
-        with st.expander(tr("refine_cv_expander_title"), expanded=True):
-            st.caption(f"{tr('refine_chat_examples')} · {tr('refine_ai_note')}")
+    cv_expanded = st.session_state.cv_diff_round > 0
+    with st.expander(tr("refine_cv_expander_title"), expanded=cv_expanded, key="atlas_refine_cv"):
+        st.caption(f"{tr('refine_chat_examples')} · {tr('refine_ai_note')}")
 
-            quota_exhausted = _quota_exhausted()
-            st.caption(_quota_caption_text())
-            if quota_exhausted:
-                st.error(tr("quota_exhausted_error").format(max=MAX_AI_CALLS_PER_SESSION))
+        quota_exhausted = _quota_exhausted()
+        st.caption(_quota_caption_text())
+        if quota_exhausted:
+            st.error(tr("quota_exhausted_error").format(max=MAX_AI_CALLS_PER_SESSION))
 
-            placeholder = tr("refine_quota_placeholder") if quota_exhausted else tr("refine_chat_placeholder")
-            if cv_instruction := st.chat_input(placeholder, disabled=quota_exhausted, key="cv_chat_input"):
-                with st.spinner(tr("refine_processing")):
-                    pb = PromptBuilder(language=st.session_state.language)
-                    st.session_state.ai_calls_used += 1
-                    success = False
-                    try:
-                        raw_response = st.session_state.llm.generate(
-                            system="You are an expert CV writer. Apply the user's instructions precisely.",
-                            user=pb.refine(st.session_state.current_cv, cv_instruction),
-                            max_tokens=8000,
-                        )
-                        document, change_note = _split_cv_and_changes(strip_fences(raw_response))
-                        st.session_state.cv_diff_round += 1
-                        st.session_state.cv_pending_diff = compute_diff(
-                            st.session_state.current_cv,
-                            document,
-                            round_id=f"cv_{st.session_state.cv_diff_round}",
-                        )
-                        st.session_state.cv_pending_change_note = change_note
-                        success = True
-                    except Exception as e:
-                        st.error(tr("refine_error").format(error=e))
-                if success:
-                    st.rerun(scope="fragment")
+        placeholder = tr("refine_quota_placeholder") if quota_exhausted else tr("refine_chat_placeholder")
+        if cv_instruction := st.chat_input(placeholder, disabled=quota_exhausted, key="cv_chat_input"):
+            with st.spinner(tr("refine_processing")):
+                pb = PromptBuilder(language=st.session_state.language)
+                st.session_state.ai_calls_used += 1
+                success = False
+                try:
+                    raw_response = st.session_state.llm.generate(
+                        system="You are an expert CV writer. Apply the user's instructions precisely.",
+                        user=pb.refine(st.session_state.current_cv, cv_instruction),
+                        max_tokens=8000,
+                    )
+                    document, change_note = _split_cv_and_changes(strip_fences(raw_response))
+                    st.session_state.cv_diff_round += 1
+                    st.session_state.cv_pending_diff = compute_diff(
+                        st.session_state.current_cv,
+                        document,
+                        round_id=f"cv_{st.session_state.cv_diff_round}",
+                    )
+                    st.session_state.cv_pending_change_note = change_note
+                    success = True
+                except Exception as e:
+                    st.error(tr("refine_error").format(error=e))
+            if success:
+                st.rerun(scope="fragment")
 
 
 def _render_cl_subtab(style: StyleConfig):
@@ -435,40 +435,40 @@ def _render_cl_subtab(style: StyleConfig):
     )
 
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
-    with st.container(key="atlas_refine_cl"):
-        with st.expander(tr("refine_letter_expander_title"), expanded=True):
-            st.caption(f"{tr('refine_chat_examples')} · {tr('refine_ai_note')}")
+    cl_expanded = st.session_state.cl_diff_round > 0
+    with st.expander(tr("refine_letter_expander_title"), expanded=cl_expanded, key="atlas_refine_cl"):
+        st.caption(f"{tr('refine_chat_examples')} · {tr('refine_ai_note')}")
 
-            quota_exhausted = _quota_exhausted()
-            st.caption(_quota_caption_text())
-            if quota_exhausted:
-                st.error(tr("quota_exhausted_error").format(max=MAX_AI_CALLS_PER_SESSION))
+        quota_exhausted = _quota_exhausted()
+        st.caption(_quota_caption_text())
+        if quota_exhausted:
+            st.error(tr("quota_exhausted_error").format(max=MAX_AI_CALLS_PER_SESSION))
 
-            placeholder = tr("refine_quota_placeholder") if quota_exhausted else tr("refine_chat_placeholder")
-            if cl_instruction := st.chat_input(placeholder, disabled=quota_exhausted, key="cl_chat_input"):
-                with st.spinner(tr("refine_processing")):
-                    pb = PromptBuilder(language=st.session_state.language)
-                    st.session_state.ai_calls_used += 1
-                    success = False
-                    try:
-                        raw_response = st.session_state.llm.generate(
-                            system="You are an expert at writing compelling cover letters. Apply the user's instructions precisely.",
-                            user=pb.refine(st.session_state.current_cl, cl_instruction),
-                            max_tokens=3000,
-                        )
-                        document, change_note = _split_cv_and_changes(strip_fences(raw_response))
-                        st.session_state.cl_diff_round += 1
-                        st.session_state.cl_pending_diff = compute_diff(
-                            st.session_state.current_cl,
-                            document,
-                            round_id=f"cl_{st.session_state.cl_diff_round}",
-                        )
-                        st.session_state.cl_pending_change_note = change_note
-                        success = True
-                    except Exception as e:
-                        st.error(tr("refine_error").format(error=e))
-                if success:
-                    st.rerun(scope="fragment")
+        placeholder = tr("refine_quota_placeholder") if quota_exhausted else tr("refine_chat_placeholder")
+        if cl_instruction := st.chat_input(placeholder, disabled=quota_exhausted, key="cl_chat_input"):
+            with st.spinner(tr("refine_processing")):
+                pb = PromptBuilder(language=st.session_state.language)
+                st.session_state.ai_calls_used += 1
+                success = False
+                try:
+                    raw_response = st.session_state.llm.generate(
+                        system="You are an expert at writing compelling cover letters. Apply the user's instructions precisely.",
+                        user=pb.refine(st.session_state.current_cl, cl_instruction),
+                        max_tokens=3000,
+                    )
+                    document, change_note = _split_cv_and_changes(strip_fences(raw_response))
+                    st.session_state.cl_diff_round += 1
+                    st.session_state.cl_pending_diff = compute_diff(
+                        st.session_state.current_cl,
+                        document,
+                        round_id=f"cl_{st.session_state.cl_diff_round}",
+                    )
+                    st.session_state.cl_pending_change_note = change_note
+                    success = True
+                except Exception as e:
+                    st.error(tr("refine_error").format(error=e))
+            if success:
+                st.rerun(scope="fragment")
 
 
 def _render_zip_download(style: StyleConfig):
@@ -501,46 +501,6 @@ def _render_zip_download(style: StyleConfig):
         st.warning(tr("export_unavailable").format(error=e))
 
 
-def _render_style_swatches():
-    """The 3 template color swatches + 'Style: {name}' label, placed next
-    to the CV/Letter tabs (see _render_results_section()). Clicking a
-    swatch switches the template and turns off custom colors, then does a
-    full rerun -- style is resolved before this fragment runs (see
-    _resolve_style()), so the new template takes effect immediately."""
-    template_names = list(styles.TEMPLATES.keys())
-    current = st.session_state.template_choice
-    is_custom = st.session_state.style_custom_enabled
-
-    css_rules = []
-    for name in template_names:
-        key = f"swatch_{name.replace(' ', '_')}"
-        color = styles.TEMPLATES[name].accent_color
-        active = (name == current) and not is_custom
-        outline = "outline:2px solid var(--atlas-accent);" if active else "outline:2px solid transparent;"
-        css_rules.append(
-            f".st-key-{key} button {{background:{color} !important;width:22px !important;"
-            f"height:22px !important;min-width:22px !important;padding:0 !important;"
-            f"border-radius:6px !important;border:none !important;{outline}outline-offset:2px;"
-            f"color:transparent !important;box-shadow:none !important;}}"
-        )
-    st.markdown(f"<style>{''.join(css_rules)}</style>", unsafe_allow_html=True)
-
-    with st.container(key="atlas_swatches"):
-        st.markdown(
-            f"<div style='font-size:11.5px;color:var(--atlas-faint);text-align:right;"
-            f"margin-bottom:6px'>{html.escape(tr('results_style_label').format(name=st.session_state.style_config.name))}</div>",
-            unsafe_allow_html=True,
-        )
-        cols = st.columns(len(template_names))
-        for name, col in zip(template_names, cols):
-            key = f"swatch_{name.replace(' ', '_')}"
-            with col:
-                if st.button("‌", key=key, help=name):
-                    st.session_state.template_choice = name
-                    st.session_state.style_custom_enabled = False
-                    st.rerun()
-
-
 @st.fragment
 def _render_results_section(style: StyleConfig):
     """
@@ -555,17 +515,15 @@ def _render_results_section(style: StyleConfig):
     user, while the rest of the page (Input/Analysis tabs, sidebar)
     still never reruns, preserving scroll position there (CVO-5).
 
-    The template swatches live in this same row (see _render_style_swatches())
-    to match the Atlas layout, but a swatch click does a *full* st.rerun()
-    (not fragment-scoped) since it needs _resolve_style() outside this
-    fragment to pick up the new template on the next run.
+    Deliberately does NOT contain the template/style controls (see
+    _render_style_controls(), called before this in _render_step3()) --
+    mixing widgets that need a *full* st.rerun() (style switching) into
+    the same fragment as widgets that need a *fragment-scoped* rerun
+    (diff accept/ignore, chat_input) turned out to be unreliable in
+    practice, so style stays fully outside this fragment.
     """
-    col_tabs, col_style = st.columns([1.6, 1])
-    with col_tabs:
-        with st.container(key="atlas_doc_tabs"):
-            cv_subtab, cl_subtab = st.tabs([tr("results_subtab_cv"), tr("results_subtab_letter")])
-    with col_style:
-        _render_style_swatches()
+    with st.container(key="atlas_doc_tabs"):
+        cv_subtab, cl_subtab = st.tabs([tr("results_subtab_cv"), tr("results_subtab_letter")])
 
     with cv_subtab:
         _render_cv_subtab(style)
@@ -1143,25 +1101,38 @@ def _render_step2():
 
 # ─── Step 3 — Résultats ────────────────────────────────────────────────────────
 
-def _resolve_style() -> StyleConfig:
-    """Read-only: resolves the active StyleConfig from already-persisted
-    widget state (template_choice / style_custom_enabled / custom_*)
-    without creating any widgets itself. Needed *before*
-    _render_results_section()'s fragment runs (its swatch row lives
-    inside that fragment); the actual customize controls are rendered
-    afterwards by _render_style_customize_expander(), using the same
-    keys -- Streamlit persists a keyed widget's value in session_state
-    across runs even before the widget is re-created in a later run, so
-    this read-first pattern is safe."""
+_TEMPLATE_EMOJI = {"Classic Blue": "🔵", "Modern Minimal": "⚫", "Elegant Burgundy": "🟤"}
+
+
+def _render_style_controls() -> StyleConfig:
+    """Template picker + optional custom colors/font, rendered *outside*
+    _render_results_section()'s fragment (deliberately -- see that
+    function's docstring). Creates its widgets and resolves the
+    StyleConfig in the same pass, same mechanism as the pre-Atlas version
+    (a single keyed st.radio for the template), just with an emoji per
+    template via format_func for a quick visual cue."""
     template_names = list(styles.TEMPLATES.keys())
-    if st.session_state.template_choice not in template_names:
-        st.session_state.template_choice = template_names[0]
+    st.caption(tr("results_style_caption"))
+    chosen_name = st.radio(
+        tr("style_template_label"),
+        template_names,
+        horizontal=True,
+        key="template_choice",
+        format_func=lambda n: f"{_TEMPLATE_EMOJI.get(n, '')} {n}",
+    )
+
+    st.toggle(tr("style_customize_toggle"), key="style_custom_enabled")
 
     if st.session_state.style_custom_enabled:
         base = st.session_state.style_config
-        text_color = st.session_state.get("custom_text_color", base.text_color)
-        heading_color = st.session_state.get("custom_heading_color", base.heading_color)
-        font = st.session_state.get("custom_font", base.font)
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            text_color = st.color_picker(tr("style_color_text_label"), value=base.text_color, key="custom_text_color")
+        with col2:
+            heading_color = st.color_picker(tr("style_color_heading_label"), value=base.heading_color, key="custom_heading_color")
+        with col3:
+            font_index = styles.FONT_CHOICES.index(base.font) if base.font in styles.FONT_CHOICES else 0
+            font = st.selectbox(tr("style_font_label"), styles.FONT_CHOICES, index=font_index, key="custom_font")
         style = StyleConfig(
             name="Custom",
             text_color=text_color,
@@ -1172,25 +1143,11 @@ def _resolve_style() -> StyleConfig:
             heading_border=True,
         )
     else:
-        style = styles.TEMPLATES[st.session_state.template_choice]
+        style = styles.TEMPLATES[chosen_name]
 
     st.session_state.style_config = style
+    st.caption(tr("results_style_live_note"))
     return style
-
-
-def _render_style_customize_expander():
-    base = st.session_state.style_config
-    with st.expander(tr("style_customize_expander"), expanded=False):
-        st.toggle(tr("style_customize_toggle"), key="style_custom_enabled")
-        if st.session_state.style_custom_enabled:
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.color_picker(tr("style_color_text_label"), value=base.text_color, key="custom_text_color")
-            with col2:
-                st.color_picker(tr("style_color_heading_label"), value=base.heading_color, key="custom_heading_color")
-            with col3:
-                font_index = styles.FONT_CHOICES.index(base.font) if base.font in styles.FONT_CHOICES else 0
-                st.selectbox(tr("style_font_label"), styles.FONT_CHOICES, index=font_index, key="custom_font")
 
 
 def _render_step3():
@@ -1206,11 +1163,9 @@ def _render_step3():
             st.rerun()
         return
 
-    style = _resolve_style()
-    _render_results_section(style)
-
+    style = _render_style_controls()
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
-    _render_style_customize_expander()
+    _render_results_section(style)
 
 
 # ─── Main layout ──────────────────────────────────────────────────────────────
