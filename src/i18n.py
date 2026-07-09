@@ -164,6 +164,9 @@ UI: dict[Lang, dict[str, str]] = {
         "style_color_heading_label": "Headings color",
         "style_font_label": "Font",
         "results_style_live_note": "The CV and Cover Letter tabs below show this style applied live.",
+        "results_style_label": "Style: {name}",
+        "style_customize_expander": "🎨 Customize colors & font",
+        "style_customize_toggle": "Use custom colors instead of the template",
         "results_subtab_cv": "CV",
         "results_subtab_letter": "Cover Letter",
         "results_cv_heading": "✨ Optimized CV (ATS)",
@@ -171,7 +174,8 @@ UI: dict[Lang, dict[str, str]] = {
         "dl_cv_pdf": "📥 Download CV (.pdf)",
         "export_unavailable": "Export unavailable: {error}",
         "results_changes_heading": "🔄 Changes & explanations",
-        "refine_cv_expander_title": "🔄 Refine this CV with AI",
+        "refine_cv_expander_title": "✦ Refine this CV with AI",
+        "refine_ai_note": "each instruction = 1 generation",
         "refine_chat_examples": (
             "Examples: \"Make the tone more formal\", \"Add keywords related to project management\", "
             "\"Shorten the letter by 20%\"."
@@ -191,8 +195,10 @@ UI: dict[Lang, dict[str, str]] = {
         "results_letter_heading": "📝 Cover letter",
         "dl_letter_docx": "📥 Download letter (.docx)",
         "dl_letter_pdf": "📥 Download letter (.pdf)",
-        "refine_letter_expander_title": "🔄 Refine this cover letter with AI",
+        "refine_letter_expander_title": "✦ Refine this cover letter with AI",
         "dl_all_zip": "📦 Download everything (.zip)",
+        "dl_cv_row_label": "CV",
+        "dl_letter_row_label": "Letter",
     },
     "fr": {
         # ── Top of page ──────────────────────────────────────────────────
@@ -352,6 +358,9 @@ UI: dict[Lang, dict[str, str]] = {
         "style_color_heading_label": "Couleur des titres",
         "style_font_label": "Police",
         "results_style_live_note": "Les onglets CV et Lettre de motivation ci-dessous appliquent ce style en direct.",
+        "results_style_label": "Style : {name}",
+        "style_customize_expander": "🎨 Personnaliser les couleurs et la police",
+        "style_customize_toggle": "Utiliser des couleurs personnalisées plutôt que le modèle",
         "results_subtab_cv": "CV",
         "results_subtab_letter": "Lettre de motivation",
         "results_cv_heading": "✨ CV optimisé (ATS)",
@@ -359,7 +368,8 @@ UI: dict[Lang, dict[str, str]] = {
         "dl_cv_pdf": "📥 Télécharger le CV (.pdf)",
         "export_unavailable": "Export indisponible : {error}",
         "results_changes_heading": "🔄 Modifications & explications",
-        "refine_cv_expander_title": "🔄 Affiner ce CV avec l'IA",
+        "refine_cv_expander_title": "✦ Affiner ce CV avec l'IA",
+        "refine_ai_note": "chaque instruction = 1 génération",
         "refine_chat_examples": (
             "Exemples : « Rends le ton plus formel », « Ajoute des mots-clés liés à la gestion de projet », "
             "« Raccourcis la lettre de 20% »."
@@ -379,8 +389,10 @@ UI: dict[Lang, dict[str, str]] = {
         "results_letter_heading": "📝 Lettre de motivation",
         "dl_letter_docx": "📥 Télécharger la lettre (.docx)",
         "dl_letter_pdf": "📥 Télécharger la lettre (.pdf)",
-        "refine_letter_expander_title": "🔄 Affiner cette lettre avec l'IA",
+        "refine_letter_expander_title": "✦ Affiner cette lettre avec l'IA",
         "dl_all_zip": "📦 Tout télécharger (.zip)",
+        "dl_cv_row_label": "CV",
+        "dl_letter_row_label": "Lettre",
     },
 }
 

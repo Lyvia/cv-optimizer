@@ -213,6 +213,54 @@ body, .stMarkdown p, .stMarkdown li, .stMarkdown span, label, .stCaption {
     border-radius: 14px;
     padding: 22px 24px;
 }
+
+/* ── Step 3 — doc tabs (segmented, pill-active) ── */
+.st-key-atlas_doc_tabs [data-baseweb="tab-list"] {
+    background: #F1EFE8;
+    border-radius: 11px;
+    padding: 4px;
+    gap: 4px;
+}
+.st-key-atlas_doc_tabs [data-baseweb="tab-list"] [data-baseweb="tab-highlight"],
+.st-key-atlas_doc_tabs [data-baseweb="tab-border"] {
+    display: none;
+}
+.st-key-atlas_doc_tabs button[data-baseweb="tab"] {
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--atlas-faint);
+    padding: 7px 16px;
+}
+.st-key-atlas_doc_tabs button[aria-selected="true"] {
+    background: #fff;
+    color: var(--atlas-ink);
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+
+/* ── Step 3 — style swatches ── */
+.st-key-atlas_swatches .stButton > button {
+    min-height: 0;
+}
+
+/* ── Step 3 — refine-with-AI panels ── */
+.st-key-atlas_refine_cv [data-testid="stExpander"],
+.st-key-atlas_refine_cl [data-testid="stExpander"] {
+    background: var(--atlas-surface-soft);
+    border-radius: 14px;
+    border: none;
+}
+
+/* ── Step 3 — download buttons + bundled zip ── */
+.stDownloadButton > button {
+    border-radius: 12px;
+}
+.st-key-atlas_zip_download .stDownloadButton > button {
+    width: 100%;
+    background: var(--atlas-ink);
+    color: #fff;
+    border: none;
+}
 </style>
 """
 

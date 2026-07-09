@@ -75,9 +75,8 @@ def render_preview_html(markdown_text: str, style: StyleConfig) -> str:
     color: {style.text_color};
     font-size: {FONT_SIZE_BODY_PT}pt;
     padding: 28px 32px;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+    border: 1px solid rgba(28,27,24,.12);
+    border-radius: 12px;
     line-height: 1.5;
 ">
 {body_html}

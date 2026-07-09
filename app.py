@@ -111,6 +111,8 @@ def _init_state():
         "target_pages": None,
         "ai_calls_used": 0,
         "style_config": styles.DEFAULT_STYLE,
+        "template_choice": styles.DEFAULT_STYLE.name,
+        "style_custom_enabled": False,
         "current_cv": None,
         "current_cl": None,
         "cv_pending_diff": None,
@@ -240,26 +242,26 @@ def _render_diff_view(chunks, doc_key: str):
     any_pending = False
     for chunk in chunks:
         if chunk.type == "equal":
-            _render_text_block(chunk.old_lines, bg="", fg="#31333F")
+            _render_text_block(chunk.old_lines, bg="", fg="#3A3833")
             continue
 
         status = _diff_status(chunk.chunk_id)
 
         if status == "accepted":
-            _render_text_block(chunk.new_lines, bg="", fg="#31333F")
+            _render_text_block(chunk.new_lines, bg="", fg="#3A3833")
             continue
         if status == "ignored":
-            _render_text_block(chunk.old_lines, bg="", fg="#31333F")
+            _render_text_block(chunk.old_lines, bg="", fg="#3A3833")
             continue
 
         any_pending = True
         if chunk.type == "removed":
-            _render_text_block(chunk.old_lines, bg="#fde8e8", fg="#842029", strike=True)
+            _render_text_block(chunk.old_lines, bg="#FBEEEA", fg="#A8412A", strike=True)
         elif chunk.type == "added":
-            _render_text_block(chunk.new_lines, bg="#e6f4ea", fg="#1e7e34")
+            _render_text_block(chunk.new_lines, bg="#E9F4EE", fg="#1E6F57")
         elif chunk.type == "replaced":
-            _render_text_block(chunk.old_lines, bg="#fde8e8", fg="#842029", strike=True)
-            _render_text_block(chunk.new_lines, bg="#e6f4ea", fg="#1e7e34")
+            _render_text_block(chunk.old_lines, bg="#FBEEEA", fg="#A8412A", strike=True)
+            _render_text_block(chunk.new_lines, bg="#E9F4EE", fg="#1E6F57")
 
         if chunk.type != "removed":
             bcol1, bcol2 = st.columns(2)
@@ -305,6 +307,33 @@ def _render_diff_view(chunks, doc_key: str):
             st.rerun(scope="fragment")
 
 
+def _render_downloads_row(row_label: str, docx_bytes_fn, pdf_bytes_fn, docx_name: str, pdf_name: str, key_prefix: str):
+    """One 'label + .docx + .pdf' row, matching the Atlas downloads layout."""
+    col_label, col_docx, col_pdf = st.columns([1, 2, 2])
+    with col_label:
+        st.markdown(
+            f"<div style='font-size:13px;font-weight:600;color:var(--atlas-text);padding-top:10px'>"
+            f"{html.escape(row_label)}</div>",
+            unsafe_allow_html=True,
+        )
+    with col_docx:
+        try:
+            st.download_button(
+                ".docx", data=docx_bytes_fn(), file_name=docx_name, mime=DOCX_MIME,
+                key=f"{key_prefix}_docx_btn", use_container_width=True,
+            )
+        except Exception as e:
+            st.warning(tr("export_unavailable").format(error=e))
+    with col_pdf:
+        try:
+            st.download_button(
+                ".pdf", data=pdf_bytes_fn(), file_name=pdf_name, mime=PDF_MIME,
+                key=f"{key_prefix}_pdf_btn", use_container_width=True,
+            )
+        except Exception as e:
+            st.warning(tr("export_unavailable").format(error=e))
+
+
 def _render_cv_subtab(style: StyleConfig):
     """CV sub-tab: content + downloads + changes log + refine-with-diff.
     Called from the @st.fragment-decorated _render_results_section(), so
@@ -319,8 +348,6 @@ def _render_cv_subtab(style: StyleConfig):
     exporter = DOCXExporter()
     pdf_exporter = PDFExporter()
 
-    st.subheader(tr("results_cv_heading"))
-
     if st.session_state.cv_pending_diff:
         if st.session_state.cv_pending_change_note:
             st.caption(st.session_state.cv_pending_change_note)
@@ -328,62 +355,55 @@ def _render_cv_subtab(style: StyleConfig):
     else:
         st.markdown(render_preview_html(st.session_state.current_cv, style), unsafe_allow_html=True)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        try:
-            cv_docx = exporter.cv_to_docx(st.session_state.current_cv, style=style)
-            st.download_button(tr("dl_cv_docx"), data=cv_docx, file_name="Optimized_CV.docx", mime=DOCX_MIME, key="dl_cv_docx_btn")
-        except Exception as e:
-            st.warning(tr("export_unavailable").format(error=e))
-    with col2:
-        try:
-            cv_pdf = pdf_exporter.cv_to_pdf(st.session_state.current_cv, style=style)
-            st.download_button(tr("dl_cv_pdf"), data=cv_pdf, file_name="Optimized_CV.pdf", mime=PDF_MIME, key="dl_cv_pdf_btn")
-        except Exception as e:
-            st.warning(tr("export_unavailable").format(error=e))
-
-    st.divider()
-    st.subheader(tr("results_changes_heading"))
-    st.markdown(
-        f'<div class="result-box">{st.session_state.changes}</div>',
-        unsafe_allow_html=True,
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+    _render_downloads_row(
+        tr("dl_cv_row_label"),
+        lambda: exporter.cv_to_docx(st.session_state.current_cv, style=style),
+        lambda: pdf_exporter.cv_to_pdf(st.session_state.current_cv, style=style),
+        "Optimized_CV.docx", "Optimized_CV.pdf", "dl_cv",
     )
 
-    st.divider()
-    cv_expanded = st.session_state.cv_diff_round > 0
-    with st.expander(tr("refine_cv_expander_title"), expanded=cv_expanded):
-        st.caption(tr("refine_chat_examples"))
+    with st.expander(tr("results_changes_heading"), expanded=False):
+        st.markdown(
+            f'<div class="result-box">{st.session_state.changes}</div>',
+            unsafe_allow_html=True,
+        )
 
-        quota_exhausted = _quota_exhausted()
-        st.caption(_quota_caption_text())
-        if quota_exhausted:
-            st.error(tr("quota_exhausted_error").format(max=MAX_AI_CALLS_PER_SESSION))
+    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+    with st.container(key="atlas_refine_cv"):
+        with st.expander(tr("refine_cv_expander_title"), expanded=True):
+            st.caption(f"{tr('refine_chat_examples')} · {tr('refine_ai_note')}")
 
-        placeholder = tr("refine_quota_placeholder") if quota_exhausted else tr("refine_chat_placeholder")
-        if cv_instruction := st.chat_input(placeholder, disabled=quota_exhausted, key="cv_chat_input"):
-            with st.spinner(tr("refine_processing")):
-                pb = PromptBuilder(language=st.session_state.language)
-                st.session_state.ai_calls_used += 1
-                success = False
-                try:
-                    raw_response = st.session_state.llm.generate(
-                        system="You are an expert CV writer. Apply the user's instructions precisely.",
-                        user=pb.refine(st.session_state.current_cv, cv_instruction),
-                        max_tokens=8000,
-                    )
-                    document, change_note = _split_cv_and_changes(strip_fences(raw_response))
-                    st.session_state.cv_diff_round += 1
-                    st.session_state.cv_pending_diff = compute_diff(
-                        st.session_state.current_cv,
-                        document,
-                        round_id=f"cv_{st.session_state.cv_diff_round}",
-                    )
-                    st.session_state.cv_pending_change_note = change_note
-                    success = True
-                except Exception as e:
-                    st.error(tr("refine_error").format(error=e))
-            if success:
-                st.rerun(scope="fragment")
+            quota_exhausted = _quota_exhausted()
+            st.caption(_quota_caption_text())
+            if quota_exhausted:
+                st.error(tr("quota_exhausted_error").format(max=MAX_AI_CALLS_PER_SESSION))
+
+            placeholder = tr("refine_quota_placeholder") if quota_exhausted else tr("refine_chat_placeholder")
+            if cv_instruction := st.chat_input(placeholder, disabled=quota_exhausted, key="cv_chat_input"):
+                with st.spinner(tr("refine_processing")):
+                    pb = PromptBuilder(language=st.session_state.language)
+                    st.session_state.ai_calls_used += 1
+                    success = False
+                    try:
+                        raw_response = st.session_state.llm.generate(
+                            system="You are an expert CV writer. Apply the user's instructions precisely.",
+                            user=pb.refine(st.session_state.current_cv, cv_instruction),
+                            max_tokens=8000,
+                        )
+                        document, change_note = _split_cv_and_changes(strip_fences(raw_response))
+                        st.session_state.cv_diff_round += 1
+                        st.session_state.cv_pending_diff = compute_diff(
+                            st.session_state.current_cv,
+                            document,
+                            round_id=f"cv_{st.session_state.cv_diff_round}",
+                        )
+                        st.session_state.cv_pending_change_note = change_note
+                        success = True
+                    except Exception as e:
+                        st.error(tr("refine_error").format(error=e))
+                if success:
+                    st.rerun(scope="fragment")
 
 
 def _render_cl_subtab(style: StyleConfig):
@@ -399,8 +419,6 @@ def _render_cl_subtab(style: StyleConfig):
     exporter = DOCXExporter()
     pdf_exporter = PDFExporter()
 
-    st.subheader(tr("results_letter_heading"))
-
     if st.session_state.cl_pending_diff:
         if st.session_state.cl_pending_change_note:
             st.caption(st.session_state.cl_pending_change_note)
@@ -408,55 +426,49 @@ def _render_cl_subtab(style: StyleConfig):
     else:
         st.markdown(render_preview_html(st.session_state.current_cl, style), unsafe_allow_html=True)
 
-    col5, col6 = st.columns(2)
-    with col5:
-        try:
-            cl_docx = exporter.cover_letter_to_docx(st.session_state.current_cl, style=style)
-            st.download_button(tr("dl_letter_docx"), data=cl_docx, file_name="Cover_Letter.docx", mime=DOCX_MIME, key="dl_letter_docx_btn")
-        except Exception as e:
-            st.warning(tr("export_unavailable").format(error=e))
-    with col6:
-        try:
-            cl_pdf = pdf_exporter.cover_letter_to_pdf(st.session_state.current_cl, style=style)
-            st.download_button(tr("dl_letter_pdf"), data=cl_pdf, file_name="Cover_Letter.pdf", mime=PDF_MIME, key="dl_letter_pdf_btn")
-        except Exception as e:
-            st.warning(tr("export_unavailable").format(error=e))
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+    _render_downloads_row(
+        tr("dl_letter_row_label"),
+        lambda: exporter.cover_letter_to_docx(st.session_state.current_cl, style=style),
+        lambda: pdf_exporter.cover_letter_to_pdf(st.session_state.current_cl, style=style),
+        "Cover_Letter.docx", "Cover_Letter.pdf", "dl_letter",
+    )
 
-    st.divider()
-    cl_expanded = st.session_state.cl_diff_round > 0
-    with st.expander(tr("refine_letter_expander_title"), expanded=cl_expanded):
-        st.caption(tr("refine_chat_examples"))
+    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+    with st.container(key="atlas_refine_cl"):
+        with st.expander(tr("refine_letter_expander_title"), expanded=True):
+            st.caption(f"{tr('refine_chat_examples')} · {tr('refine_ai_note')}")
 
-        quota_exhausted = _quota_exhausted()
-        st.caption(_quota_caption_text())
-        if quota_exhausted:
-            st.error(tr("quota_exhausted_error").format(max=MAX_AI_CALLS_PER_SESSION))
+            quota_exhausted = _quota_exhausted()
+            st.caption(_quota_caption_text())
+            if quota_exhausted:
+                st.error(tr("quota_exhausted_error").format(max=MAX_AI_CALLS_PER_SESSION))
 
-        placeholder = tr("refine_quota_placeholder") if quota_exhausted else tr("refine_chat_placeholder")
-        if cl_instruction := st.chat_input(placeholder, disabled=quota_exhausted, key="cl_chat_input"):
-            with st.spinner(tr("refine_processing")):
-                pb = PromptBuilder(language=st.session_state.language)
-                st.session_state.ai_calls_used += 1
-                success = False
-                try:
-                    raw_response = st.session_state.llm.generate(
-                        system="You are an expert at writing compelling cover letters. Apply the user's instructions precisely.",
-                        user=pb.refine(st.session_state.current_cl, cl_instruction),
-                        max_tokens=3000,
-                    )
-                    document, change_note = _split_cv_and_changes(strip_fences(raw_response))
-                    st.session_state.cl_diff_round += 1
-                    st.session_state.cl_pending_diff = compute_diff(
-                        st.session_state.current_cl,
-                        document,
-                        round_id=f"cl_{st.session_state.cl_diff_round}",
-                    )
-                    st.session_state.cl_pending_change_note = change_note
-                    success = True
-                except Exception as e:
-                    st.error(tr("refine_error").format(error=e))
-            if success:
-                st.rerun(scope="fragment")
+            placeholder = tr("refine_quota_placeholder") if quota_exhausted else tr("refine_chat_placeholder")
+            if cl_instruction := st.chat_input(placeholder, disabled=quota_exhausted, key="cl_chat_input"):
+                with st.spinner(tr("refine_processing")):
+                    pb = PromptBuilder(language=st.session_state.language)
+                    st.session_state.ai_calls_used += 1
+                    success = False
+                    try:
+                        raw_response = st.session_state.llm.generate(
+                            system="You are an expert at writing compelling cover letters. Apply the user's instructions precisely.",
+                            user=pb.refine(st.session_state.current_cl, cl_instruction),
+                            max_tokens=3000,
+                        )
+                        document, change_note = _split_cv_and_changes(strip_fences(raw_response))
+                        st.session_state.cl_diff_round += 1
+                        st.session_state.cl_pending_diff = compute_diff(
+                            st.session_state.current_cl,
+                            document,
+                            round_id=f"cl_{st.session_state.cl_diff_round}",
+                        )
+                        st.session_state.cl_pending_change_note = change_note
+                        success = True
+                    except Exception as e:
+                        st.error(tr("refine_error").format(error=e))
+                if success:
+                    st.rerun(scope="fragment")
 
 
 def _render_zip_download(style: StyleConfig):
@@ -476,15 +488,57 @@ def _render_zip_download(style: StyleConfig):
         zip_cl_docx = exporter.cover_letter_to_docx(st.session_state.current_cl, style=style)
         zip_cl_pdf = pdf_exporter.cover_letter_to_pdf(st.session_state.current_cl, style=style)
         zip_bytes = _build_zip(zip_cv_docx, zip_cv_pdf, zip_cl_docx, zip_cl_pdf)
-        st.download_button(
-            tr("dl_all_zip"),
-            data=zip_bytes,
-            file_name="complete_application.zip",
-            mime="application/zip",
-            key="dl_all_zip_btn",
-        )
+        with st.container(key="atlas_zip_download"):
+            st.download_button(
+                tr("dl_all_zip"),
+                data=zip_bytes,
+                file_name="complete_application.zip",
+                mime="application/zip",
+                key="dl_all_zip_btn",
+                use_container_width=True,
+            )
     except Exception as e:
         st.warning(tr("export_unavailable").format(error=e))
+
+
+def _render_style_swatches():
+    """The 3 template color swatches + 'Style: {name}' label, placed next
+    to the CV/Letter tabs (see _render_results_section()). Clicking a
+    swatch switches the template and turns off custom colors, then does a
+    full rerun -- style is resolved before this fragment runs (see
+    _resolve_style()), so the new template takes effect immediately."""
+    template_names = list(styles.TEMPLATES.keys())
+    current = st.session_state.template_choice
+    is_custom = st.session_state.style_custom_enabled
+
+    css_rules = []
+    for name in template_names:
+        key = f"swatch_{name.replace(' ', '_')}"
+        color = styles.TEMPLATES[name].accent_color
+        active = (name == current) and not is_custom
+        outline = "outline:2px solid var(--atlas-accent);" if active else "outline:2px solid transparent;"
+        css_rules.append(
+            f".st-key-{key} button {{background:{color} !important;width:22px !important;"
+            f"height:22px !important;min-width:22px !important;padding:0 !important;"
+            f"border-radius:6px !important;border:none !important;{outline}outline-offset:2px;"
+            f"color:transparent !important;box-shadow:none !important;}}"
+        )
+    st.markdown(f"<style>{''.join(css_rules)}</style>", unsafe_allow_html=True)
+
+    with st.container(key="atlas_swatches"):
+        st.markdown(
+            f"<div style='font-size:11.5px;color:var(--atlas-faint);text-align:right;"
+            f"margin-bottom:6px'>{html.escape(tr('results_style_label').format(name=st.session_state.style_config.name))}</div>",
+            unsafe_allow_html=True,
+        )
+        cols = st.columns(len(template_names))
+        for name, col in zip(template_names, cols):
+            key = f"swatch_{name.replace(' ', '_')}"
+            with col:
+                if st.button("‌", key=key, help=name):
+                    st.session_state.template_choice = name
+                    st.session_state.style_custom_enabled = False
+                    st.rerun()
 
 
 @st.fragment
@@ -500,8 +554,18 @@ def _render_results_section(style: StyleConfig):
     LLM call, just markdown/DOCX/PDF rendering) and invisible to the
     user, while the rest of the page (Input/Analysis tabs, sidebar)
     still never reruns, preserving scroll position there (CVO-5).
+
+    The template swatches live in this same row (see _render_style_swatches())
+    to match the Atlas layout, but a swatch click does a *full* st.rerun()
+    (not fragment-scoped) since it needs _resolve_style() outside this
+    fragment to pick up the new template on the next run.
     """
-    cv_subtab, cl_subtab = st.tabs([tr("results_subtab_cv"), tr("results_subtab_letter")])
+    col_tabs, col_style = st.columns([1.6, 1])
+    with col_tabs:
+        with st.container(key="atlas_doc_tabs"):
+            cv_subtab, cl_subtab = st.tabs([tr("results_subtab_cv"), tr("results_subtab_letter")])
+    with col_style:
+        _render_style_swatches()
 
     with cv_subtab:
         _render_cv_subtab(style)
@@ -509,7 +573,7 @@ def _render_results_section(style: StyleConfig):
     with cl_subtab:
         _render_cl_subtab(style)
 
-    st.divider()
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
     _render_zip_download(style)
 
 
@@ -1077,7 +1141,57 @@ def _render_step2():
             _run_cv_and_letter_generation()
 
 
-# ─── Step 3 — Résultats (bridging: old content, new shell) ───────────────────
+# ─── Step 3 — Résultats ────────────────────────────────────────────────────────
+
+def _resolve_style() -> StyleConfig:
+    """Read-only: resolves the active StyleConfig from already-persisted
+    widget state (template_choice / style_custom_enabled / custom_*)
+    without creating any widgets itself. Needed *before*
+    _render_results_section()'s fragment runs (its swatch row lives
+    inside that fragment); the actual customize controls are rendered
+    afterwards by _render_style_customize_expander(), using the same
+    keys -- Streamlit persists a keyed widget's value in session_state
+    across runs even before the widget is re-created in a later run, so
+    this read-first pattern is safe."""
+    template_names = list(styles.TEMPLATES.keys())
+    if st.session_state.template_choice not in template_names:
+        st.session_state.template_choice = template_names[0]
+
+    if st.session_state.style_custom_enabled:
+        base = st.session_state.style_config
+        text_color = st.session_state.get("custom_text_color", base.text_color)
+        heading_color = st.session_state.get("custom_heading_color", base.heading_color)
+        font = st.session_state.get("custom_font", base.font)
+        style = StyleConfig(
+            name="Custom",
+            text_color=text_color,
+            heading_color=heading_color,
+            accent_color=heading_color,
+            font=font,
+            heading_uppercase=True,
+            heading_border=True,
+        )
+    else:
+        style = styles.TEMPLATES[st.session_state.template_choice]
+
+    st.session_state.style_config = style
+    return style
+
+
+def _render_style_customize_expander():
+    base = st.session_state.style_config
+    with st.expander(tr("style_customize_expander"), expanded=False):
+        st.toggle(tr("style_customize_toggle"), key="style_custom_enabled")
+        if st.session_state.style_custom_enabled:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.color_picker(tr("style_color_text_label"), value=base.text_color, key="custom_text_color")
+            with col2:
+                st.color_picker(tr("style_color_heading_label"), value=base.heading_color, key="custom_heading_color")
+            with col3:
+                font_index = styles.FONT_CHOICES.index(base.font) if base.font in styles.FONT_CHOICES else 0
+                st.selectbox(tr("style_font_label"), styles.FONT_CHOICES, index=font_index, key="custom_font")
+
 
 def _render_step3():
     if st.session_state.generation_notices:
@@ -1092,52 +1206,11 @@ def _render_step3():
             st.rerun()
         return
 
-    # ── Visual style controls + live preview ──────────────────────────────
-    st.subheader(tr("results_style_subheader"))
-    st.caption(tr("results_style_caption"))
-
-    mode = st.radio(
-        tr("style_mode_label"),
-        [tr("style_mode_template"), tr("style_mode_advanced")],
-        horizontal=True,
-        key="style_mode",
-    )
-
-    if mode == tr("style_mode_template"):
-        template_names = list(styles.TEMPLATES.keys())
-        chosen_name = st.radio(
-            tr("style_template_label"),
-            template_names,
-            horizontal=True,
-            key="template_choice",
-        )
-        style = styles.TEMPLATES[chosen_name]
-    else:
-        base = st.session_state.style_config
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            text_color = st.color_picker(tr("style_color_text_label"), value=base.text_color)
-        with col2:
-            heading_color = st.color_picker(tr("style_color_heading_label"), value=base.heading_color)
-        with col3:
-            font_index = styles.FONT_CHOICES.index(base.font) if base.font in styles.FONT_CHOICES else 0
-            font = st.selectbox(tr("style_font_label"), styles.FONT_CHOICES, index=font_index)
-        style = StyleConfig(
-            name="Custom",
-            text_color=text_color,
-            heading_color=heading_color,
-            accent_color=heading_color,
-            font=font,
-            heading_uppercase=base.heading_uppercase,
-            heading_border=base.heading_border,
-        )
-
-    st.session_state.style_config = style
-    st.caption(tr("results_style_live_note"))
-
-    st.divider()
-
+    style = _resolve_style()
     _render_results_section(style)
+
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+    _render_style_customize_expander()
 
 
 # ─── Main layout ──────────────────────────────────────────────────────────────
