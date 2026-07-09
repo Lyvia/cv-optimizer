@@ -156,30 +156,13 @@ body, .stMarkdown p, .stMarkdown li, .stMarkdown span, label, .stCaption {
     font-size: 12px !important;
 }
 
-/* ── Stepper — 3 equal columns with a static connector line drawn behind
-   them (a single flat color/opacity rather than per-segment coloring is
-   a deliberate simplification: it's robust at any viewport width, unlike
-   the previous 5-column [button, thin-line, button, thin-line, button]
-   layout, which depended on exact flex ratios that broke under the
-   mobile "stack every column" rule). ── */
+/* ── Stepper — 3 equal columns, no decorative connector line: an earlier
+   attempt at drawing one behind the buttons via an absolutely-positioned
+   ::before rendered as a visible gray bar across the whole row in real
+   browsers instead of a thin line (not something the AppTest-based test
+   suite could catch, since it doesn't render real CSS). Plain, reliable
+   buttons beat a broken decoration. ── */
 .st-key-atlas_stepper { margin-bottom: 28px; }
-.st-key-atlas_stepper [data-testid="stHorizontalBlock"] {
-    position: relative;
-}
-.st-key-atlas_stepper [data-testid="stHorizontalBlock"]::before {
-    content: "";
-    position: absolute;
-    top: 50%;
-    left: 12%;
-    right: 12%;
-    height: 1.5px;
-    background: var(--atlas-border-med);
-    z-index: 0;
-}
-.st-key-atlas_stepper .stButton {
-    position: relative;
-    z-index: 1;
-}
 .st-key-atlas_stepper .stButton > button {
     border-radius: 20px !important;
     font-size: 13px !important;
@@ -209,12 +192,12 @@ body, .stMarkdown p, .stMarkdown li, .stMarkdown span, label, .stCaption {
     border-radius: 14px;
     padding: 18px 20px 10px;
 }
-.st-key-atlas_cv_zone [data-testid="stFileUploaderDropzone"],
-.st-key-atlas_job_zone [data-testid="stFileUploaderDropzone"] {
-    background: transparent;
-    border: none;
-    padding: 4px 0;
-}
+/* Deliberately NOT restyling [data-testid="stFileUploaderDropzone"]'s own
+   background/border/padding here: shrinking it previously made the
+   native "file attached" confirmation chip easy to miss, which is the
+   most likely cause of users re-uploading a CV that had actually already
+   registered the first time -- the native dropzone chrome stays as-is
+   so that confirmation is always clearly visible. */
 
 /* ── Settings panel (Step 1) ── */
 .st-key-atlas_settings {
@@ -303,7 +286,13 @@ body, .stMarkdown p, .stMarkdown li, .stMarkdown span, label, .stCaption {
     h1.atlas-serif { font-size: 26px !important; }
     .stTextArea textarea { font-size: 0.9rem; }
 
-    [data-testid="column"] {
+    /* Force-wrap: width:100% alone on a column doesn't guarantee its
+       nowrap flex row actually breaks onto a new line -- explicit
+       flex-wrap is what makes stacking reliable. */
+    [data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap !important;
+    }
+    [data-testid="stColumn"] {
         width: 100% !important;
         flex: 1 1 100% !important;
         min-width: 100% !important;
@@ -322,8 +311,8 @@ body, .stMarkdown p, .stMarkdown li, .stMarkdown span, label, .stCaption {
        "atlas_row_"-keyed container (downloads' .docx/.pdf pairs) stay
        side by side -- these are short 2-3 item rows, not real content,
        so one-per-row would just add scrolling for no benefit. */
-    .st-key-atlas_stepper [data-testid="column"],
-    [class*="st-key-atlas_row_"] [data-testid="column"] {
+    .st-key-atlas_stepper [data-testid="stColumn"],
+    [class*="st-key-atlas_row_"] [data-testid="stColumn"] {
         width: auto !important;
         flex: 1 1 0 !important;
         min-width: 0 !important;
@@ -342,7 +331,7 @@ body, .stMarkdown p, .stMarkdown li, .stMarkdown span, label, .stCaption {
         flex-wrap: wrap;
         row-gap: 8px;
     }
-    .st-key-atlas_topbar [data-testid="column"] {
+    .st-key-atlas_topbar [data-testid="stColumn"] {
         width: auto !important;
         flex: 0 1 auto !important;
         min-width: 0 !important;

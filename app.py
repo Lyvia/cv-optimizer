@@ -926,18 +926,26 @@ def _render_score_hero(parsed):
     col_strengths, col_gaps = st.columns(2)
     with col_strengths:
         st.markdown(
+            # margin-bottom on the outer wrapper (not just between internal
+            # elements) so there's always breathing room below this block
+            # once it stacks above "Gaps to close" on narrow screens --
+            # side by side on desktop this margin is invisible/harmless.
+            "<div style='margin-bottom:24px'>"
             "<div style=\"font:600 10.5px 'Public Sans';letter-spacing:.14em;text-transform:uppercase;"
             f"color:var(--atlas-accent);margin-bottom:13px\">{html.escape(tr('strengths_heading'))}</div>"
             "<div style='font-size:13.5px;line-height:1.5;color:var(--atlas-text);"
-            f"display:flex;flex-direction:column;gap:10px'>{_bullet_list(parsed.strengths)}</div>",
+            f"display:flex;flex-direction:column;gap:10px'>{_bullet_list(parsed.strengths)}</div>"
+            "</div>",
             unsafe_allow_html=True,
         )
     with col_gaps:
         st.markdown(
+            "<div style='margin-bottom:24px'>"
             "<div style=\"font:600 10.5px 'Public Sans';letter-spacing:.14em;text-transform:uppercase;"
             f"color:var(--atlas-alert);margin-bottom:13px\">{html.escape(tr('gaps_heading'))}</div>"
             "<div style='font-size:13.5px;line-height:1.5;color:var(--atlas-text);"
-            f"display:flex;flex-direction:column;gap:10px'>{_bullet_list(parsed.gaps)}</div>",
+            f"display:flex;flex-direction:column;gap:10px'>{_bullet_list(parsed.gaps)}</div>"
+            "</div>",
             unsafe_allow_html=True,
         )
 
@@ -1083,16 +1091,13 @@ def _render_step2():
 
 # ─── Step 3 — Résultats ────────────────────────────────────────────────────────
 
-_TEMPLATE_EMOJI = {"Classic Blue": "🔵", "Modern Minimal": "⚫", "Elegant Burgundy": "🟤"}
-
-
 def _render_style_controls() -> StyleConfig:
     """Template picker + optional custom colors/font, rendered *outside*
     _render_results_section()'s fragment (deliberately -- see that
     function's docstring). Creates its widgets and resolves the
-    StyleConfig in the same pass, same mechanism as the pre-Atlas version
-    (a single keyed st.radio for the template), just with an emoji per
-    template via format_func for a quick visual cue."""
+    StyleConfig in the same pass -- the exact same plain st.radio
+    mechanism as the pre-Atlas version, with no format_func/decoration,
+    to keep this control as simple and reliable as possible."""
     template_names = list(styles.TEMPLATES.keys())
     st.caption(tr("results_style_caption"))
     chosen_name = st.radio(
@@ -1100,7 +1105,6 @@ def _render_style_controls() -> StyleConfig:
         template_names,
         horizontal=True,
         key="template_choice",
-        format_func=lambda n: f"{_TEMPLATE_EMOJI.get(n, '')} {n}",
     )
 
     st.toggle(tr("style_customize_toggle"), key="style_custom_enabled")
