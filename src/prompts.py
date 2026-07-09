@@ -90,7 +90,11 @@ Be direct. Do not soften the issues to spare the candidate."""
         if job.strip():
             job_block = f"=== JOB DESCRIPTION ===\n{job}"
             task_desc = "perfectly ATS-optimized for this specific job"
-            keyword_rule = "- Naturally weave in the exact keywords from the job description (not keyword stuffing)"
+            keyword_rule = (
+                "- Use the job description's terminology when describing genuinely matching "
+                "experience (call it what the job calls it) — never claim a skill, tool, or "
+                "responsibility the candidate didn't actually have"
+            )
             relevance_rule = "- Remove information irrelevant to THIS job"
         else:
             job_block = "=== JOB DESCRIPTION ===\nNo job description provided — optimize for a general-purpose ATS profile."
@@ -133,6 +137,12 @@ Rewrite this CV so it is {task_desc}.
 === RULES FOR THE OPTIMIZED CV ===
 
 **Content:**
+- **NEVER invent skills, tools, technologies, employers, dates, or qualifications that
+  are not genuinely present in the original CV — this rule overrides every other
+  content rule below if they conflict.** If the job asks for something the candidate
+  doesn't have, do not fabricate it: rephrase and reframe the closest genuinely-held
+  experience to highlight its relevance, or simply don't claim it. Rephrasing and
+  reframing real experience is the whole point of this task; inventing experience is not.
 {length_rule}
 {keyword_rule}
 {quantify_rule}
@@ -159,6 +169,10 @@ Explain each significant change:
 1. **What changed**: describe the precise modification
 2. **Why**: impact on ATS parsing or recruiter impression
 3. **Action required from the candidate**: flag with [ACTION REQUIRED] anything to verify or complete
+
+Then, if the job asks for anything the candidate's real background doesn't support,
+add a **Gaps not addressed** subsection naming each one plainly — do not paper over
+them by having quietly claimed them above.
 
 Be thorough but concise. This section is meant to help the candidate understand the reasoning."""
 
