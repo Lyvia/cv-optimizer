@@ -50,8 +50,9 @@ UI: dict[Lang, dict[str, str]] = {
             "ATS-optimized CV, a cover letter, and a detailed analysis."
         ),
         "step1_cv_zone_title": "Your CV",
+        "step1_cv_zone_subtitle": "PDF, DOCX or TXT",
         "step1_job_zone_title": "Job description",
-        "step1_job_zone_subtitle": "Optional",
+        "step1_job_zone_subtitle": "Optional · PDF, DOCX or TXT",
         "step1_paste_instead": "Or paste text instead",
         "step1_anonymize_label": "Anonymize my data",
         "recommended_badge": "recommended",
@@ -240,8 +241,9 @@ UI: dict[Lang, dict[str, str]] = {
             "détaillée."
         ),
         "step1_cv_zone_title": "Votre CV",
+        "step1_cv_zone_subtitle": "PDF, DOCX ou TXT",
         "step1_job_zone_title": "Offre d'emploi",
-        "step1_job_zone_subtitle": "Optionnel",
+        "step1_job_zone_subtitle": "Optionnel · PDF, DOCX ou TXT",
         "step1_paste_instead": "Ou coller le texte",
         "step1_anonymize_label": "Anonymiser mes données",
         "recommended_badge": "recommandé",

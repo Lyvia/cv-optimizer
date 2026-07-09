@@ -156,8 +156,30 @@ body, .stMarkdown p, .stMarkdown li, .stMarkdown span, label, .stCaption {
     font-size: 12px !important;
 }
 
-/* ── Stepper ── */
+/* ── Stepper — 3 equal columns with a static connector line drawn behind
+   them (a single flat color/opacity rather than per-segment coloring is
+   a deliberate simplification: it's robust at any viewport width, unlike
+   the previous 5-column [button, thin-line, button, thin-line, button]
+   layout, which depended on exact flex ratios that broke under the
+   mobile "stack every column" rule). ── */
 .st-key-atlas_stepper { margin-bottom: 28px; }
+.st-key-atlas_stepper [data-testid="stHorizontalBlock"] {
+    position: relative;
+}
+.st-key-atlas_stepper [data-testid="stHorizontalBlock"]::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 12%;
+    right: 12%;
+    height: 1.5px;
+    background: var(--atlas-border-med);
+    z-index: 0;
+}
+.st-key-atlas_stepper .stButton {
+    position: relative;
+    z-index: 1;
+}
 .st-key-atlas_stepper .stButton > button {
     border-radius: 20px !important;
     font-size: 13px !important;
@@ -165,7 +187,16 @@ body, .stMarkdown p, .stMarkdown li, .stMarkdown span, label, .stCaption {
     box-shadow: none !important;
 }
 
-/* ── Drop zones (Step 1) ── */
+/* ── Drop zones (Step 1) — same height regardless of small content
+   differences between the two (see also the matching subtitle line
+   added to both zones in app.py, which keeps their header block the
+   same number of lines to begin with). ── */
+.st-key-atlas_cv_zone,
+.st-key-atlas_job_zone {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
 .st-key-atlas_cv_zone {
     border: 1.5px dashed rgba(30,111,87,.45);
     background: var(--atlas-accent-soft);
@@ -256,6 +287,68 @@ body, .stMarkdown p, .stMarkdown li, .stMarkdown span, label, .stCaption {
     color: #fff;
     border: none;
 }
+
+/* ── Mobile (≤ 768px) ──────────────────────────────────────────────────
+   Default: stack every column layout (drop zones, score hero, forces/
+   gaps, back/next button pairs, custom color pickers, diff Accept/
+   Ignore -- intentionally stacked here too, for bigger tap targets).
+   Named exceptions below keep specific rows side by side where
+   stacking would break navigation or waste space on 2 short buttons. */
+@media (max-width: 768px) {
+    .block-container {
+        padding-left: 1.1rem !important;
+        padding-right: 1.1rem !important;
+        margin-top: 16px !important;
+    }
+    h1.atlas-serif { font-size: 26px !important; }
+    .stTextArea textarea { font-size: 0.9rem; }
+
+    [data-testid="column"] {
+        width: 100% !important;
+        flex: 1 1 100% !important;
+        min-width: 100% !important;
+    }
+    .stButton > button {
+        width: 100%;
+        min-height: 3rem;
+        font-size: 1rem;
+    }
+    .stDownloadButton > button {
+        width: 100%;
+        min-height: 2.75rem;
+    }
+
+    /* Exceptions: navigation chrome (stepper, top bar) and any
+       "atlas_row_"-keyed container (downloads' .docx/.pdf pairs) stay
+       side by side -- these are short 2-3 item rows, not real content,
+       so one-per-row would just add scrolling for no benefit. */
+    .st-key-atlas_stepper [data-testid="column"],
+    [class*="st-key-atlas_row_"] [data-testid="column"] {
+        width: auto !important;
+        flex: 1 1 0 !important;
+        min-width: 0 !important;
+    }
+    .st-key-atlas_stepper .stButton > button,
+    [class*="st-key-atlas_row_"] .stButton > button,
+    [class*="st-key-atlas_row_"] .stDownloadButton > button {
+        width: 100%;
+        min-height: 2.5rem;
+        font-size: 0.85rem;
+        padding-left: 4px;
+        padding-right: 4px;
+    }
+
+    .st-key-atlas_topbar [data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap;
+        row-gap: 8px;
+    }
+    .st-key-atlas_topbar [data-testid="column"] {
+        width: auto !important;
+        flex: 0 1 auto !important;
+        min-width: 0 !important;
+    }
+    .st-key-atlas_topbar span.atlas-serif { font-size: 16px !important; }
+}
 </style>
 """
 
@@ -274,7 +367,7 @@ def score_ring_html(score: int, score_label: str) -> str:
     st.markdown(..., unsafe_allow_html=True) block."""
     pct = max(0, min(100, score))
     return f"""
-<div style="width:128px;height:128px;border-radius:50%;flex:none;
+<div style="width:128px;height:128px;border-radius:50%;flex:none;margin:0 auto;
     background:conic-gradient(var(--atlas-accent) 0 {pct}%, #E7E3DA {pct}% 100%);
     display:flex;align-items:center;justify-content:center">
   <div style="width:100px;height:100px;border-radius:50%;background:#fff;

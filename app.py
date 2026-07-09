@@ -51,29 +51,6 @@ st.markdown("""
         border-radius: 4px;
         margin-bottom: 1rem;
     }
-
-    /* ── Mobile (≤ 768px) ── */
-    @media (max-width: 768px) {
-        [data-testid="column"] {
-            width: 100% !important;
-            flex: 1 1 100% !important;
-            min-width: 100% !important;
-        }
-        .stButton > button {
-            width: 100%;
-            min-height: 3rem;
-            font-size: 1rem;
-        }
-        .stDownloadButton > button {
-            width: 100%;
-            min-height: 2.75rem;
-        }
-        .block-container {
-            padding-left: 1.1rem !important;
-            padding-right: 1.1rem !important;
-        }
-        .stTextArea textarea { font-size: 0.9rem; }
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -308,30 +285,36 @@ def _render_diff_view(chunks, doc_key: str):
 
 
 def _render_downloads_row(row_label: str, docx_bytes_fn, pdf_bytes_fn, docx_name: str, pdf_name: str, key_prefix: str):
-    """One 'label + .docx + .pdf' row, matching the Atlas downloads layout."""
-    col_label, col_docx, col_pdf = st.columns([1, 2, 2])
-    with col_label:
-        st.markdown(
-            f"<div style='font-size:13px;font-weight:600;color:var(--atlas-text);padding-top:10px'>"
-            f"{html.escape(row_label)}</div>",
-            unsafe_allow_html=True,
-        )
-    with col_docx:
-        try:
-            st.download_button(
-                ".docx", data=docx_bytes_fn(), file_name=docx_name, mime=DOCX_MIME,
-                key=f"{key_prefix}_docx_btn", use_container_width=True,
-            )
-        except Exception as e:
-            st.warning(tr("export_unavailable").format(error=e))
-    with col_pdf:
-        try:
-            st.download_button(
-                ".pdf", data=pdf_bytes_fn(), file_name=pdf_name, mime=PDF_MIME,
-                key=f"{key_prefix}_pdf_btn", use_container_width=True,
-            )
-        except Exception as e:
-            st.warning(tr("export_unavailable").format(error=e))
+    """One 'label line + side-by-side .docx/.pdf buttons' row. The label is
+    its own line (not a 3rd column) and the 2 buttons are wrapped in an
+    "atlas_row_"-keyed container so they stay side by side even on mobile
+    (see the matching CSS rule in styles.py) -- 2 compact buttons in a row
+    is fine at phone widths; 3 unrelated columns (label + 2 buttons) is
+    what was forcing an extra, awkward stack before."""
+    st.markdown(
+        f"<div style='font-size:12.5px;font-weight:600;color:var(--atlas-faint);"
+        f"text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px'>"
+        f"{html.escape(row_label)}</div>",
+        unsafe_allow_html=True,
+    )
+    with st.container(key=f"atlas_row_dl_{key_prefix}"):
+        col_docx, col_pdf = st.columns(2)
+        with col_docx:
+            try:
+                st.download_button(
+                    ".docx", data=docx_bytes_fn(), file_name=docx_name, mime=DOCX_MIME,
+                    key=f"{key_prefix}_docx_btn", use_container_width=True,
+                )
+            except Exception as e:
+                st.warning(tr("export_unavailable").format(error=e))
+        with col_pdf:
+            try:
+                st.download_button(
+                    ".pdf", data=pdf_bytes_fn(), file_name=pdf_name, mime=PDF_MIME,
+                    key=f"{key_prefix}_pdf_btn", use_container_width=True,
+                )
+            except Exception as e:
+                st.warning(tr("export_unavailable").format(error=e))
 
 
 def _render_cv_subtab(style: StyleConfig):
@@ -628,23 +611,20 @@ def _render_stepper(current_step: int):
     st.markdown(f"<style>{''.join(state_css)}</style>", unsafe_allow_html=True)
 
     with st.container(key="atlas_stepper"):
-        c1, cline1, c2, cline2, c3 = st.columns([2.3, 0.35, 2, 0.35, 2.3])
+        # 3 equal columns + a static connector line drawn behind them via
+        # CSS (::before on the row) -- simpler and far more robust across
+        # viewport widths than the previous 5-column [button, thin-line,
+        # button, thin-line, button] layout, which relied on exact flex
+        # ratios that a mobile "stack every column" override would break.
+        c1, c2, c3 = st.columns(3)
         with c1:
             if st.button(("✓ " if current_step > 1 else "1 ") + labels[1], key="step_btn_1", use_container_width=True):
                 st.session_state.wizard_step = 1
                 st.rerun()
-        with cline1:
-            color = "var(--atlas-accent)" if current_step > 1 else "var(--atlas-border-med)"
-            op = "opacity:.45;" if current_step > 1 else ""
-            st.markdown(f"<div style='height:1.5px;background:{color};{op}margin-top:15px'></div>", unsafe_allow_html=True)
         with c2:
             if st.button(("✓ " if current_step > 2 else "2 ") + labels[2], key="step_btn_2", use_container_width=True):
                 st.session_state.wizard_step = 2
                 st.rerun()
-        with cline2:
-            color = "var(--atlas-accent)" if current_step > 2 else "var(--atlas-border-med)"
-            op = "opacity:.45;" if current_step > 2 else ""
-            st.markdown(f"<div style='height:1.5px;background:{color};{op}margin-top:15px'></div>", unsafe_allow_html=True)
         with c3:
             if st.button("3 " + labels[3], key="step_btn_3", use_container_width=True):
                 st.session_state.wizard_step = 3
@@ -672,7 +652,9 @@ def _render_step1():
                 "<div style='width:42px;height:42px;border-radius:11px;background:var(--atlas-accent-tint);"
                 "margin-bottom:8px;display:flex;align-items:center;justify-content:center;"
                 "color:var(--atlas-accent);font-size:20px'>↑</div>"
-                f"<div style='font-size:15px;font-weight:600;margin-bottom:6px'>{tr('step1_cv_zone_title')}</div>",
+                f"<div style='font-size:15px;font-weight:600;margin-bottom:2px'>{tr('step1_cv_zone_title')}</div>"
+                f"<div style='font-size:12.5px;color:var(--atlas-faint);margin-bottom:6px'>"
+                f"{tr('step1_cv_zone_subtitle')}</div>",
                 unsafe_allow_html=True,
             )
             cv_file = st.file_uploader(
@@ -692,12 +674,12 @@ def _render_step1():
                 "color:var(--atlas-faint);font-size:20px'>+</div>"
                 f"<div style='font-size:15px;font-weight:600;margin-bottom:2px'>{tr('step1_job_zone_title')}</div>"
                 f"<div style='font-size:12.5px;color:var(--atlas-faint);margin-bottom:6px'>"
-                f"{tr('step1_job_zone_subtitle')} · {tr('input_job_caption')}</div>",
+                f"{tr('step1_job_zone_subtitle')}</div>",
                 unsafe_allow_html=True,
             )
             job_file = st.file_uploader(
                 tr("input_job_upload_label"), type=["pdf", "docx", "txt"],
-                key="job_upload", label_visibility="collapsed",
+                key="job_upload", label_visibility="collapsed", help=tr("input_job_caption"),
             )
             with st.expander(tr("step1_paste_instead")):
                 job_text_paste = st.text_area(
