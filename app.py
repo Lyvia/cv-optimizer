@@ -661,6 +661,14 @@ def _render_step1():
                 tr("input_cv_upload_label"), type=["pdf", "docx", "txt"],
                 key="cv_upload", label_visibility="collapsed",
             )
+            if not cv_file:
+                # Known Streamlit/Chromium quirk (streamlit/streamlit#8355, #2401):
+                # the very first click on ANY file_uploader dropzone on the page
+                # can silently fail to open the OS file picker -- the next click
+                # (on this or any other uploader) always works. No app-side fix
+                # exists for the underlying browser/frontend behavior, so surface
+                # it here instead of leaving the user to think the upload is broken.
+                st.caption(tr("upload_dialog_hint"))
             with st.expander(tr("step1_paste_instead")):
                 cv_text_paste = st.text_area(
                     tr("input_cv_paste_label"), height=150,
@@ -681,6 +689,8 @@ def _render_step1():
                 tr("input_job_upload_label"), type=["pdf", "docx", "txt"],
                 key="job_upload", label_visibility="collapsed", help=tr("input_job_caption"),
             )
+            if not job_file:
+                st.caption(tr("upload_dialog_hint"))
             with st.expander(tr("step1_paste_instead")):
                 job_text_paste = st.text_area(
                     tr("input_job_paste_label"), height=150,
